@@ -1,8 +1,10 @@
+import time
 import unittest
 from unittest import mock
 
 from gengwiki import AccountApiUnavailable, AuthError, GengWiki, NotFoundError
 from gengwiki._store import namespace
+from gengwiki.client import TTL_CATALOG_MISS
 from tests.fake import KEY_A, KEY_B, PACK, PERSONA_A, PERSONA_B
 from tests.test_memes import Base
 
@@ -117,6 +119,41 @@ class SwitchPersonaTest(Base):
         self.assertEqual(len(c.personas()), 2)
         self.assertEqual([p.title for p in c.personas("姐姐")], ["温柔姐姐"])
         self.assertEqual(c.personas("姐姐")[0].memes[0]["slug"], "yyds")
+        self.assertEqual(self.fake.count("/api/personas"), 1)
+
+    def test_newly_published_persona_is_found_without_waiting_a_day(self):
+        published = self.fake.personas.pop(PERSONA_B)
+        c = self.client(key=None)
+        c.keys.login("me@example.com", "correct horse")
+        self.assertEqual(len(c.personas()), 1)
+        with self.assertRaises(NotFoundError):
+            c.use_persona("温柔姐姐")
+        self.assertEqual(self.fake.count("/api/personas"), 1)  # just read, so the miss sends nothing
+        self.fake.personas[PERSONA_B] = published
+        later = time.time() + TTL_CATALOG_MISS + 1
+        with mock.patch("time.time", return_value=later):
+            self.assertEqual(c.use_persona("温柔姐姐").prompt, "你是温柔姐姐")
+        self.assertEqual(self.fake.count("/api/personas"), 2)
+
+    def test_empty_catalog_is_checked_again(self):
+        hidden, self.fake.personas = self.fake.personas, {}
+        c = self.client(key=None)
+        self.assertEqual(c.personas(), [])
+        self.assertEqual(c.personas(), [])
+        self.assertEqual(self.fake.count("/api/personas"), 1)  # repeating a miss within the minute sends nothing
+        self.fake.personas = hidden
+        later = time.time() + TTL_CATALOG_MISS + 1
+        with mock.patch("time.time", return_value=later):
+            self.assertEqual(len(c.personas()), 2)
+            self.assertEqual(len(c.personas()), 2)
+        self.assertEqual(self.fake.count("/api/personas"), 2)
+
+    def test_hit_in_an_old_catalog_sends_nothing(self):
+        c = self.client(key=None)
+        c.personas()
+        later = time.time() + TTL_CATALOG_MISS + 1
+        with mock.patch("time.time", return_value=later):
+            self.assertEqual([p.title for p in c.personas("姐姐")], ["温柔姐姐"])
         self.assertEqual(self.fake.count("/api/personas"), 1)
 
     def test_hidden_catalog_falls_back_to_saved_keys(self):

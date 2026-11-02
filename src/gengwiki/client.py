@@ -33,6 +33,8 @@ TTL_MISSING = 3600
 # Personas have no edit route, only publish and unpublish.
 TTL_PERSONA = 7 * 86400
 TTL_CATALOG = 86400
+# A persona may have been published since the catalog was read, so a miss checks again, at most this often.
+TTL_CATALOG_MISS = 60
 # The persona catalog returns at most this many rows, backend/src/personas.rs.
 PERSONA_LIST_MAX = 60
 
@@ -232,26 +234,34 @@ class GengWiki:
     def personas(self, q: str = "") -> list[Persona]:
         """Published personas to pick from. Where the site hides the catalog, the ones the saved keys are bound to."""
         q = q.strip()
-        url = f"{self.site_url}/api/personas"
         try:
-            rows = self._cached(_SHARED, "personas", url, TTL_CATALOG, token=None)
-            if q and len(rows) >= PERSONA_LIST_MAX:
-                # The list is cut off, so only the server can search the rest.
-                return [Persona.of(r) for r in self._cached(_SHARED, f"personas:{q.lower()}", url, TTL_CATALOG, token=None, params={"q": q})]
+            found = _search.search_personas(q, self._catalog(q, TTL_CATALOG))
+            if not found:
+                found = _search.search_personas(q, self._catalog(q, TTL_CATALOG_MISS))
         except NotFoundError:
             rows = [{"id": k.persona_id, "title": k.persona_title} for k in self.keys.local() if k.persona_id]
-        return [Persona.of(r) for r in _search.search_personas(q, rows)]
+            found = _search.search_personas(q, rows)
+        return [Persona.of(r) for r in found]
+
+    def _catalog(self, q: str, ttl: float) -> list[dict]:
+        url = f"{self.site_url}/api/personas"
+        rows = self._cached(_SHARED, "personas", url, ttl, token=None)
+        if q and len(rows) >= PERSONA_LIST_MAX:
+            # The list is cut off, so only the server can search the rest.
+            return self._cached(_SHARED, f"personas:{q.lower()}", url, ttl, token=None, params={"q": q})
+        return rows
 
     def _catalog_row(self, wanted: str) -> dict:
         """One persona from the catalog with its memes and packs, by exact id or title."""
-        url = f"{self.site_url}/api/personas"
+
+        def find(ttl: float) -> dict | None:
+            rows = self._catalog(wanted, ttl)
+            return next((r for r in rows if wanted == r["id"] or wanted.casefold() == r["title"].casefold()), None)
+
         try:
-            rows = self._cached(_SHARED, "personas", url, TTL_CATALOG, token=None)
-            if len(rows) >= PERSONA_LIST_MAX:
-                rows = self._cached(_SHARED, f"personas:{wanted.lower()}", url, TTL_CATALOG, token=None, params={"q": wanted})
+            row = find(TTL_CATALOG) or find(TTL_CATALOG_MISS)
         except NotFoundError as e:
             raise AccountApiUnavailable(f"{self.site_url} does not expose the persona catalog") from e
-        row = next((r for r in rows if wanted == r["id"] or wanted.casefold() == r["title"].casefold()), None)
         if row is None:
             raise NotFoundError(f"no published persona {wanted!r}", 404, "not_found")
         return row
