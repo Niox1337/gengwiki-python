@@ -12,7 +12,7 @@ from . import _search
 from ._http import Http, check_url
 from ._keyring import Keyring
 from ._store import Hit, Store, namespace
-from .errors import AccountApiUnavailable, AuthError, ForbiddenError, NotFoundError, UnavailableError
+from .errors import AccountApiUnavailable, AuthError, BadResponseError, ForbiddenError, NotFoundError, UnavailableError
 from .keys import Keys
 from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, RateLimit, Sticker, StickerPack
 from .tools import Tools
@@ -278,9 +278,14 @@ class GengWiki:
             for found in folder.glob(f"{sid}.*"):
                 return found
             # The image route takes no key and does not count against one.
-            body, headers = self._http.request("GET", f"{self.base_url}/v1/stickers/{sid}/image", retries=1)
+            url = f"{self.base_url}/v1/stickers/{sid}/image"
+            body, headers = self._http.request("GET", url, retries=1)
+            # This file is kept forever, so anything but a real image must not land here.
+            suffix = _IMAGE_TYPES.get(headers.get_content_type())
+            if suffix is None:
+                raise BadResponseError(f"expected an image from {url}, got {headers.get_content_type()}", code="bad_response")
             folder.mkdir(parents=True, exist_ok=True)
-            path = folder / (sid + _IMAGE_TYPES.get(headers.get_content_type(), ".img"))
+            path = folder / (sid + suffix)
             tmp = folder / f".{sid}.tmp"
             tmp.write_bytes(body)
             os.replace(tmp, path)

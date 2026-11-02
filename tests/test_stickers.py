@@ -1,6 +1,6 @@
 import unittest
 
-from gengwiki import NotFoundError
+from gengwiki import BadResponseError, NotFoundError
 from tests.fake import PACK, PNG, STICKER
 from tests.test_memes import Base
 
@@ -27,6 +27,15 @@ class StickerTest(Base):
         with self.assertRaises(ValueError):
             self.client().sticker_image("../../keys")
         self.assertEqual(self.fake.count(), 0)
+
+    def test_html_with_a_200_is_never_kept_as_an_image(self):
+        c = self.client()
+        self.fake.html_ok = True
+        with self.assertRaises(BadResponseError):
+            c.sticker_image(STICKER)
+        self.assertFalse((c.home / "stickers").exists())
+        self.fake.html_ok = False
+        self.assertEqual(c.sticker_image(STICKER).read_bytes(), PNG)
 
     def test_missing_image_raises(self):
         with self.assertRaises(NotFoundError):
