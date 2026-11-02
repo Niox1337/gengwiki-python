@@ -60,6 +60,10 @@ class Persona(Model):
     description: str = ""
     prompt: str = ""
     tags: list[str] = field(default_factory=list)
+    # Only the catalog sends these, a key's own persona does not.
+    author: str | None = None
+    memes: list[dict] = field(default_factory=list)
+    packs: list[dict] = field(default_factory=list)
 
     def as_message(self) -> dict[str, str]:
         """The system message for any chat completions style API."""
