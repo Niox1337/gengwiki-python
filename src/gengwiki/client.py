@@ -3,6 +3,7 @@
 import logging
 import os
 import threading
+import time
 import urllib.parse
 import uuid
 from pathlib import Path
@@ -12,7 +13,15 @@ from . import _search
 from ._http import Http, check_url
 from ._keyring import Keyring
 from ._store import Hit, Store, namespace
-from .errors import AccountApiUnavailable, AuthError, BadResponseError, ForbiddenError, NotFoundError, UnavailableError
+from .errors import (
+    AccountApiUnavailable,
+    AuthError,
+    BadResponseError,
+    ForbiddenError,
+    NotFoundError,
+    RateLimitError,
+    UnavailableError,
+)
 from .keys import Keys
 from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, RateLimit, Sticker, StickerPack
 from .tools import Tools
@@ -37,6 +46,8 @@ TTL_CATALOG = 86400
 TTL_CATALOG_MISS = 60
 # The persona catalog returns at most this many rows, backend/src/personas.rs.
 PERSONA_LIST_MAX = 60
+# After a failed refresh the old copy is served for this long with no request, or for the whole of a Retry-After.
+OUTAGE_PAUSE = 60
 
 _SHARED = "shared"  # data that is the same for every key
 _MISSING = {"__missing__": True}
@@ -67,6 +78,7 @@ class GengWiki:
         self._store = Store(self.home / "cache.sqlite3")
         self._keyring = Keyring(self.home / "keys.json")
         self._lock = threading.Lock()
+        self._paused: dict[str | None, float] = {}  # by token, since a rate limit belongs to one key
         self._key = api_key or os.environ.get("GENGWIKI_API_KEY")
         if not self._key:
             saved = self._keyring.read()
@@ -96,6 +108,7 @@ class GengWiki:
         """Make the next read of everything go to the network. The old data stays as a fallback."""
         self._store.expire(self._ns)
         self._store.expire(_SHARED)
+        self._paused.clear()
 
     def _cached(
         self,
@@ -134,6 +147,8 @@ class GengWiki:
             if good(hit):
                 return answer(hit)
             usable = hit is not None and hit.value != _MISSING
+            if usable and time.time() < self._paused.get(token, 0):
+                return hit.value
             try:
                 # With an old copy in hand a retry only delays the answer.
                 value = self._http.json("GET", url, token=token, params=params, retries=0 if usable else 1, expect=expect)
@@ -143,6 +158,8 @@ class GengWiki:
             except UnavailableError as e:
                 if usable:
                     log.warning("serving a stale copy of %s: %s", url, e)
+                    wait = e.retry_after if isinstance(e, RateLimitError) else 0
+                    self._paused[token] = time.time() + max(wait, OUTAGE_PAUSE)
                     return hit.value
                 raise
             self._store.put(ns, key, value)

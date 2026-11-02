@@ -1,8 +1,10 @@
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from gengwiki import AuthError, BadResponseError, GengWiki, NotFoundError, RateLimitError, ServerError
+from gengwiki.client import OUTAGE_PAUSE
 from tests.fake import KEY_A, KEY_B, Fake, meme, serve
 
 
@@ -98,8 +100,8 @@ class MemeTest(Base):
     def test_outage_serves_stale_copy_without_retrying(self):
         c = self.client()
         c.search_memes()
-        c.refresh()
         for status in (500, 429):
+            c.refresh()
             self.fake.status = status
             before = c.request_count
             started = time.monotonic()
@@ -183,6 +185,51 @@ class MemeTest(Base):
         self.fake.json_ok = ["not", "a", "persona"]
         with self.assertRaises(BadResponseError):
             self.client().persona()
+
+    def test_outage_asks_once_then_waits(self):
+        c = self.client()
+        c.search_memes()
+        c.refresh()
+        self.fake.status = 500
+        for _ in range(5):
+            c.search_memes("躺平")
+        self.assertEqual(self.fake.count("/v1/memes/search"), 2)  # the first read, and one failed refresh
+        later = time.time() + OUTAGE_PAUSE + 1
+        with mock.patch("time.time", return_value=later):
+            c.search_memes("躺平")
+        self.assertEqual(self.fake.count("/v1/memes/search"), 3)
+
+    def test_rate_limit_waits_for_the_whole_retry_after(self):
+        c = self.client()
+        c.search_memes()
+        c.refresh()
+        self.fake.status = 429  # the fake says Retry-After 3600
+        c.search_memes("躺平")
+        with mock.patch("time.time", return_value=time.time() + 3000):
+            c.search_memes("躺平")
+        self.assertEqual(self.fake.count("/v1/memes/search"), 2)
+
+    def test_a_limit_on_one_key_does_not_hold_back_another(self):
+        c = self.client()
+        c.search_memes()
+        c.refresh()
+        self.fake.status = 429
+        c.search_memes("躺平")
+        self.fake.status = None
+        other = c.keys.add("b", KEY_B)
+        c.keys.use(other.name)
+        self.assertEqual([m.slug for m in c.search_memes("yyds")], ["yyds"])
+
+    def test_refresh_ends_the_wait_and_a_recovery_is_seen(self):
+        c = self.client()
+        c.search_memes()
+        c.refresh()
+        self.fake.status = 500
+        c.search_memes("躺平")
+        self.fake.status = None
+        self.fake.memes["tang-ping"]["title"] = "躺平二"
+        c.refresh()
+        self.assertEqual(c.search_memes("躺平")[0].title, "躺平二")
 
 
 if __name__ == "__main__":
