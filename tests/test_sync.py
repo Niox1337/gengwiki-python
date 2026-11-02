@@ -28,6 +28,12 @@ class SyncTest(Base):
         self.fake.keys[KEY_B]["scopes"] = ["memes:read"]
         self.assertEqual(self.client(KEY_B).sync()["memes"], 1)
 
+    def test_a_meme_hidden_since_the_list_was_read_is_skipped(self):
+        c = self.client()
+        c.search_memes()  # the list now names both memes
+        del self.fake.memes["yyds"]
+        self.assertEqual(c.sync()["memes"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

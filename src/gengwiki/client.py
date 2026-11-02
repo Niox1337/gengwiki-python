@@ -383,22 +383,21 @@ class GengWiki:
         summary = {"memes": 0, "stickers": 0, "images": 0}
 
         def allowed(step: Callable[[], Any], default: Any = None) -> Any:
-            # A key without the scope simply has nothing to sync there.
+            # A key without the scope has nothing to sync there, and a listed item may have been hidden since.
             try:
                 return step()
-            except ForbiddenError:
+            except (ForbiddenError, NotFoundError):
                 return default
 
         for row in allowed(self._list, []):
-            self.meme(row["slug"])
-            summary["memes"] += 1
+            if allowed(lambda slug=row["slug"]: self.meme(slug)):
+                summary["memes"] += 1
         allowed(self.persona)
         allowed(self.trending)
         for pack in allowed(self.sticker_packs, []):
             for sticker in pack.stickers:
                 summary["stickers"] += 1
-                if images:
-                    self.sticker_image(sticker.id)
+                if images and allowed(lambda sid=sticker.id: self.sticker_image(sid)):
                     summary["images"] += 1
         allowed(self.search_lexicons)
         summary["requests"] = self.request_count - before
