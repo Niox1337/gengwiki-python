@@ -1,5 +1,8 @@
 import contextlib
 import io
+import os
+import subprocess
+import sys
 from unittest import mock
 
 from gengwiki.__main__ import main
@@ -71,6 +74,16 @@ class CliTest(Base):
         self.assertIn("tang-ping", self.run_cli("trending")[1])
         self.assertIn("温柔姐姐", self.run_cli("personas", "姐姐")[1])
         self.assertIn("梗 2 个", self.run_cli("sync", "--images")[1])
+
+    def test_empty_results_say_so(self):
+        self.run_cli("keys", "add", "a")
+        self.assertIn("没有找到", self.run_cli("search", "完全不存在")[1])
+        self.assertIn("没有找到", self.run_cli("personas", "完全不存在")[1])
+
+    def test_a_pipe_that_cannot_hold_chinese_still_gets_readable_text(self):
+        env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+        out = subprocess.run([sys.executable, "-m", "gengwiki", "--help"], capture_output=True, env=env, check=False).stdout
+        self.assertIn("梗Wiki", out.decode("utf-8"))
 
     def test_no_command_prints_help(self):
         code, text = self.run_cli()

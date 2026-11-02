@@ -8,6 +8,8 @@ from . import GengWiki, GengWikiError, __version__
 
 
 def _memes(rows) -> None:
+    if not rows:
+        print("没有找到")
     for m in rows:
         print(f"{m.title}  [{m.slug}]  {m.summary}")
 
@@ -79,7 +81,10 @@ def _keys_revoke(c: GengWiki, a) -> None:
 
 
 def _personas(c: GengWiki, a) -> None:
-    for p in c.personas(a.q):
+    rows = c.personas(a.q)
+    if not rows:
+        print("没有找到")
+    for p in rows:
         print(f"{p.title}  {p.description}".rstrip())
 
 
@@ -147,9 +152,11 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
-        # A Windows console may not have every character in a meme, and that must not end the program.
         if hasattr(stream, "reconfigure"):
-            stream.reconfigure(errors="replace")
+            # A pipe on a non-Chinese Windows is cp1252, which would turn all the text into question marks.
+            # On any encoding, one character it lacks must not end the program.
+            encoding = stream.encoding if "梗".encode(stream.encoding, "ignore") else "utf-8"
+            stream.reconfigure(encoding=encoding, errors="replace")
     parser = _parser()
     args = parser.parse_args(argv)
     if args.run is None:
