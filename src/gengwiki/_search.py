@@ -1,0 +1,48 @@
+"""The server's search, run locally, so a synced key answers without a request."""
+
+import re
+
+
+def _trigrams(text: str) -> set[str]:
+    """What pg_trgm's show_trgm returns: lowercased alphanumeric words, padded with two spaces in front and one behind."""
+    grams: set[str] = set()
+    for word in re.findall(r"[^\W_]+", text.lower()):
+        padded = f"  {word} "
+        grams.update(padded[i : i + 3] for i in range(len(padded) - 2))
+    return grams
+
+
+def similarity(a: str, b: str) -> float:
+    ga, gb = _trigrams(a), _trigrams(b)
+    return len(ga & gb) / len(ga | gb) if ga and gb else 0.0
+
+
+def search_memes(q: str, rows: list[dict], limit: int) -> list[dict]:
+    """Same match and order as common::memes::search over search_text, which is the title and the aliases."""
+    q = q.strip()
+    if not q:
+        return rows[:limit]
+    scored = []
+    for r in rows:
+        text = " ".join([r["title"], *r["aliases"]])
+        sim = similarity(text, q)
+        if q.lower() in text.lower() or sim > 0.2:
+            scored.append((sim, r))
+    scored.sort(key=lambda x: (-x[0], -x[1]["heat"]))
+    return [r for _, r in scored[:limit]]
+
+
+def search_stickers(q: str, packs: list[dict], limit: int) -> list[dict]:
+    """Same match as the API's strpos over the caption, the pack title and the pack tags, in pack order."""
+    q = q.strip().lower()
+    found = []
+    for p in packs:
+        for s in p["stickers"]:
+            if q in " ".join([s["caption"], p["title"], *p["tags"]]).lower():
+                found.append({**s, "pack_id": p["id"], "pack_title": p["title"]})
+    return found[:limit]
+
+
+def search_entries(q: str, entries: list[dict], limit: int) -> list[dict]:
+    q = q.strip().lower()
+    return [e for e in entries if q in " ".join([e["term"], *e["aliases"], e["note"], *e["tags"]]).lower()][:limit]
