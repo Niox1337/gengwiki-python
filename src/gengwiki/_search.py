@@ -43,6 +43,12 @@ def search_stickers(q: str, packs: list[dict], limit: int) -> list[dict]:
     return found[:limit]
 
 
+def search_personas(q: str, rows: list[dict]) -> list[dict]:
+    """Same match as the catalog's strpos over the title, the description and the tags."""
+    q = q.strip().lower()
+    return [r for r in rows if q in " ".join([r["title"], r.get("description", ""), *r.get("tags", [])]).lower()]
+
+
 def search_entries(q: str, entries: list[dict], limit: int) -> list[dict]:
     q = q.strip().lower()
     return [e for e in entries if q in " ".join([e["term"], *e["aliases"], e["note"], *e["tags"]]).lower()][:limit]
