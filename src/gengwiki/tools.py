@@ -101,6 +101,10 @@ class Tools:
         """Definitions for OpenAI, DeepSeek and anything else that takes chat completions tools."""
         return [{"type": "function", "function": d} for d in self._pick(names)]
 
+    def responses(self, names: Sequence[str] | None = None) -> list[dict]:
+        """Definitions for the OpenAI Responses API."""
+        return [{"type": "function", **d} for d in self._pick(names)]
+
     def anthropic(self, names: Sequence[str] | None = None) -> list[dict]:
         """Definitions for the Claude API."""
         return [{"name": d["name"], "description": d["description"], "input_schema": d["parameters"]} for d in self._pick(names)]
@@ -125,7 +129,17 @@ class Tools:
         return json.dumps(result, ensure_ascii=False)
 
     def run(self, message: Any) -> list[dict]:
-        """Run every tool call in a model reply and return the messages to append. Takes SDK objects or plain dicts, from either API."""
+        """Run every tool call in a model reply and return the messages to append. Takes SDK objects or plain dicts, from any of the three APIs."""
+        choices = _get(message, "choices")
+        if choices:
+            message = _get(choices[0], "message")  # handed the whole chat completion
+        output = _get(message, "output")
+        if isinstance(output, list):
+            return [
+                {"type": "function_call_output", "call_id": _get(i, "call_id"), "output": self.call(_get(i, "name"), _get(i, "arguments"))}
+                for i in output
+                if _get(i, "type") == "function_call"
+            ]
         calls = _get(message, "tool_calls")
         if calls:
             return [

@@ -12,6 +12,8 @@ class ToolsTest(Base):
         names = {t["function"]["name"] for t in c.tools.openai()}
         self.assertEqual(names, {"search_memes", "get_meme", "trending_memes", "search_stickers", "search_lexicon"})
         self.assertEqual(c.tools.openai()[0]["type"], "function")
+        flat = c.tools.responses(["get_meme"])[0]
+        self.assertEqual((flat["type"], flat["name"]), ("function", "get_meme"))
         claude = c.tools.anthropic(["get_meme"])
         self.assertEqual([t["name"] for t in claude], ["get_meme"])
         self.assertIn("slug", claude[0]["input_schema"]["properties"])
@@ -91,6 +93,21 @@ class ToolsTest(Base):
         c = self.client()
         for name, args in [("get_meme", {"slug": 123}), ("search_memes", {"q": 5}), ("search_memes", "null"), ("search_memes", "[1]")]:
             self.assertEqual(json.loads(c.tools.call(name, args))["error"]["code"], "bad_arguments", (name, args))
+
+    def test_run_whole_chat_completion(self):
+        call = NS(id="1", function=NS(name="search_memes", arguments='{"q": "躺平"}'))
+        [reply] = self.client().tools.run(NS(choices=[NS(message=NS(content=None, tool_calls=[call]))]))
+        self.assertEqual(reply["tool_call_id"], "1")
+
+    def test_run_responses_api_objects_and_dicts(self):
+        c = self.client()
+        text = {"type": "message", "content": []}
+        call = {"type": "function_call", "id": "fc", "call_id": "c", "name": "search_memes", "arguments": '{"q": "躺平"}'}
+        for response in ({"output": [text, call]}, NS(output=[NS(**text), NS(**call)])):
+            [reply] = c.tools.run(response)
+            self.assertEqual((reply["type"], reply["call_id"]), ("function_call_output", "c"))
+            self.assertIn("tang-ping", reply["output"])
+        self.assertEqual(c.tools.run({"output": [text]}), [])
 
 
 if __name__ == "__main__":
