@@ -2,6 +2,17 @@
 
 梗Wiki 的 Python SDK。先读本地，网络只是兜底。不依赖任何第三方库，支持 Python 3.10 及以上。
 
+```bash
+pip install git+https://github.com/Niox1337/gengwiki-python
+```
+
+到[个人中心](https://gengwiki.niox.lol/me)创建 Key，然后保存到本机，之后的代码里就不用再写它了。
+
+```bash
+gengwiki keys add 老哥      # 粘贴时不显示，也不会留在命令历史里
+gengwiki status            # 查看当前 Key、人设和额度
+```
+
 ```python
 from gengwiki import GengWiki
 
@@ -29,7 +40,7 @@ client.request_count                       # 实际发出的请求数
 | 查询失败 | 不存在的结果也会记住 1 小时，避免模型反复查同一个词 | 1 小时 1 次 |
 | 用量和限流 | 总是实时读取 | 每次 1 次 |
 
-服务器宕机、网络断开或触发限流时，只要本地有旧数据就直接返回旧数据，并在 `gengwiki` 日志里记一条警告。Key 被吊销时不会这样处理，401 和 403 总是直接抛出。
+服务器宕机、网络断开或触发限流时，只要本地有旧数据就直接返回旧数据，并在 `gengwiki` 日志里记一条警告。之后 1 分钟内不再询问服务器，所以断网时也不用每次都等超时。限流时会一直等到 `Retry-After` 结束，`client.refresh()` 可以立刻结束等待。Key 被吊销时不会这样处理，401 和 403 总是直接抛出。
 
 ```python
 client.sync(images=True)   # 把这个 Key 能看到的内容全部下载下来，之后可以离线使用
@@ -37,6 +48,12 @@ client.refresh()           # 让下一次读取走网络，旧数据继续留作
 ```
 
 如果一个 Key 关联的梗超过 100 个，列表会被截断，因为接口没有分页。这时搜索改为按查询词请求服务器，每个查询词缓存 6 小时。
+
+同一个客户端可以在多个线程里使用。在异步程序里用 `asyncio.to_thread` 调用，并发的相同查询只发一个请求。
+
+```python
+memes = await asyncio.to_thread(client.search_memes, "躺平")
+```
 
 ## API Key
 
@@ -79,12 +96,34 @@ SDK 依次这样查找。
 3. 如果已登录，从人设目录里找到它，创建一个新 Key 并保存，和网站一样带上它关联的梗和表情包。
 4. 都没有就抛出 `NotFoundError`，说明可以怎么做。切换失败时当前人设不变。
 
-切换过一次之后，来回切换不再发任何请求，选择也会在下次启动时恢复。`client.personas("关键词")` 可以浏览人设目录。
+切换过一次之后，来回切换不再发任何请求，选择也会在下次启动时恢复。`client.personas("关键词")` 可以浏览人设目录。名字没有完全对上时，错误信息会列出相近的人设。
+
+Claude 的系统提示不放在消息列表里，所以要写成 `system=persona.prompt`。
+
+## 命令行
+
+安装后可以用 `gengwiki`，也可以用 `python -m gengwiki`。密码和 Key 都在提示时输入，不会显示。
+
+```bash
+gengwiki login                # 登录，只保存 7 天有效的 token
+gengwiki status               # 当前站点、Key、人设和额度
+gengwiki search 躺平           # 也有 meme、trending、personas
+gengwiki use 温柔姐姐           # 切换人设
+gengwiki sync --images        # 下载全部内容供离线使用
+gengwiki keys                 # 也有 add、use、remove、secret、remote、rotate、revoke
+```
+
+可以这样把 Key 交给别的程序。
+
+```bash
+GENGWIKI_API_KEY=$(gengwiki keys secret 老哥) python app.py
+```
 
 ## 给大模型用的工具
 
 ```python
-tools = client.tools.openai()        # OpenAI、DeepSeek 等
+tools = client.tools.openai()        # OpenAI 和 DeepSeek 等的 Chat Completions
+tools = client.tools.responses()     # OpenAI 的 Responses API
 tools = client.tools.anthropic()     # Claude
 
 while True:
@@ -95,9 +134,9 @@ while True:
     messages += [reply, *results]
 ```
 
-`run` 能处理两家 SDK 返回的对象，也能处理普通字典。Claude 的回复用法相同，只是追加时写成 `{"role": "assistant", "content": reply.content}`。
+`run` 能处理三种接口返回的对象，也能处理普通字典。Claude 的回复用法相同，只是追加时写成 `{"role": "assistant", "content": reply.content}`。Responses API 把 `response` 传给 `run`，追加时写成 `input += [*response.output, *results]`。
 
-共有 5 个工具，分别是 `search_memes`、`get_meme`、`trending_memes`、`search_stickers` 和 `search_lexicon`。返回内容只留模型需要的字段，以节省 token。出错时返回 JSON 形式的错误而不是抛异常，模型可以看到错误并自己调整。可以用 `client.tools.openai(["search_memes"])` 只选其中几个。
+共有 5 个工具，分别是 `search_memes`、`get_meme`、`trending_memes`、`search_stickers` 和 `search_lexicon`。返回内容只留模型需要的字段，以节省 token。出错时返回 JSON 形式的错误而不是抛异常，模型可以看到错误并自己调整。`get_meme` 没找到时，错误信息会带上相近的 slug，省去一轮搜索。可以用 `client.tools.openai(["search_memes"])` 只选其中几个。
 
 ## 错误
 
