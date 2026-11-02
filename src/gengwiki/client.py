@@ -1,6 +1,5 @@
 """The client. Every read goes local first, the network is the fallback."""
 
-import hashlib
 import logging
 import os
 import threading
@@ -12,7 +11,7 @@ from typing import Any, Callable, Sequence
 from . import _search
 from ._http import Http, check_url
 from ._keyring import Keyring
-from ._store import Hit, Store
+from ._store import Hit, Store, namespace
 from .errors import AuthError, ForbiddenError, NotFoundError, UnavailableError
 from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, RateLimit, Sticker, StickerPack
 
@@ -78,7 +77,7 @@ class GengWiki:
 
     @property
     def _ns(self) -> str:
-        return _namespace(self._key)
+        return namespace(self._key)
 
     def refresh(self) -> None:
         """Make the next read of everything go to the network. The old data stays as a fallback."""
@@ -307,8 +306,3 @@ class GengWiki:
         allowed(self.search_lexicons)
         summary["requests"] = self.request_count - before
         return summary
-
-
-def _namespace(key: str | None) -> str:
-    """Cache rows are filed under a hash, the key itself never reaches the cache."""
-    return hashlib.sha256((key or "").encode()).hexdigest()[:16]

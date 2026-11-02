@@ -1,5 +1,6 @@
 """SQLite cache of raw API responses. A cache must never break the caller, so its failures read as misses."""
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -9,6 +10,11 @@ from typing import Any, NamedTuple
 
 # The table name carries the format version, a new format simply starts empty.
 _SCHEMA = "create table if not exists cache_v1 (ns text, key text, value text, fetched_at real, primary key (ns, key))"
+
+
+def namespace(key: str | None) -> str:
+    """Cache rows are filed under a hash, the key itself never reaches the cache."""
+    return hashlib.sha256((key or "").encode()).hexdigest()[:16]
 
 
 class Hit(NamedTuple):
