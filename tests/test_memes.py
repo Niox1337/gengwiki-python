@@ -2,7 +2,7 @@ import tempfile
 import time
 import unittest
 
-from gengwiki import AuthError, GengWiki, NotFoundError, RateLimitError, ServerError
+from gengwiki import AuthError, BadResponseError, GengWiki, NotFoundError, RateLimitError, ServerError
 from tests.fake import KEY_A, KEY_B, Fake, meme, serve
 
 
@@ -115,6 +115,21 @@ class MemeTest(Base):
         with self.assertRaises(RateLimitError) as e:
             self.client().search_memes()
         self.assertEqual(e.exception.retry_after, 3600)
+
+    def test_html_with_a_200_serves_the_stale_copy(self):
+        c = self.client()
+        c.search_memes()
+        c.refresh()
+        self.fake.html_ok = True
+        self.assertEqual(c.search_memes("躺平")[0].slug, "tang-ping")
+
+    def test_html_with_a_200_and_no_copy_raises_and_is_not_cached(self):
+        self.fake.html_ok = True
+        c = self.client()
+        with self.assertRaisesRegex(BadResponseError, "text/html"):
+            c.search_memes()
+        self.fake.html_ok = False
+        self.assertEqual(c.search_memes("躺平")[0].slug, "tang-ping")
 
     def test_revoked_key_gets_an_auth_error_not_stale_data(self):
         c = self.client()

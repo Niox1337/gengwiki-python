@@ -51,6 +51,11 @@ class ToolsTest(Base):
         c.refresh()
         self.assertEqual(json.loads(c.tools.call("search_memes", {"q": "x"}))["error"]["code"], "forbidden")
 
+    def test_html_with_a_200_is_not_blamed_on_the_arguments(self):
+        self.fake.html_ok = True
+        got = json.loads(self.client().tools.call("search_memes", {"q": "躺平"}))
+        self.assertEqual(got["error"]["code"], "bad_response")
+
     def test_run_openai_objects_and_dicts(self):
         c = self.client()
         args = '{"q": "躺平"}'

@@ -13,6 +13,7 @@ from . import __version__
 from .errors import (
     AuthError,
     BadRequestError,
+    BadResponseError,
     ConflictError,
     ForbiddenError,
     GengWikiError,
@@ -120,5 +121,10 @@ class Http:
         raise AssertionError("unreachable")
 
     def json(self, method: str, url: str, **kwargs):
-        body, _ = self.request(method, url, **kwargs)
-        return json.loads(body) if body else None
+        body, headers = self.request(method, url, **kwargs)
+        if not body:
+            return None
+        try:
+            return json.loads(body)
+        except ValueError as e:
+            raise BadResponseError(f"expected JSON from {url}, got {headers.get_content_type()}", code="bad_response") from e

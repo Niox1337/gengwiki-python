@@ -47,5 +47,9 @@ class NetworkError(UnavailableError):
     pass
 
 
+class BadResponseError(UnavailableError):
+    """A success status with the wrong content, such as a captive portal or a misrouted gateway answering in HTML."""
+
+
 class AccountApiUnavailable(GengWikiError):
     """The site does not expose the account routes, so keys cannot be managed from here."""
