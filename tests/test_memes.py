@@ -23,6 +23,25 @@ class Base(unittest.TestCase):
 
 
 class MemeTest(Base):
+    def test_meme_prompt_puts_named_memes_first_and_takes_no_extra_requests(self):
+        c = self.client()
+        prompt = c.meme_prompt("YYDS 了", limit=2)
+        lines = [l for l in prompt.splitlines() if l.startswith("- ")]
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith("- YYDS（永远的神）：YYDS的释义 使用场景：YYDS的场景"))
+        sent = c.request_count
+        c.meme_prompt("躺平")
+        self.assertEqual([m.slug for m in c.match_memes("摆烂中")], ["tang-ping"])
+        self.assertEqual(c.request_count, sent)
+
+    def test_meme_prompt_survives_a_missing_scope_and_an_empty_scope(self):
+        self.fake.keys[KEY_A]["scopes"] = ["memes:read"]
+        c = self.client()
+        self.assertIn("躺平", c.meme_prompt())
+        self.fake.keys[KEY_A]["scopes"] = ["persona:read"]
+        c.refresh()
+        self.assertEqual(c.meme_prompt(), "")
+
     def test_many_searches_cost_one_request(self):
         c = self.client()
         self.assertEqual([m.slug for m in c.search_memes("躺平")], ["tang-ping"])

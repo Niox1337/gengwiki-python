@@ -16,7 +16,7 @@ _DEFINITIONS = [
         "description": "搜索中文网络热梗，返回释义和使用场景。遇到不认识的网络用语时调用。",
         "parameters": {
             "type": "object",
-            "properties": {"q": {"type": "string", "description": "梗的关键词、别名或拼音缩写"}, "limit": _LIMIT},
+            "properties": {"q": {"type": "string", "description": "梗的关键词、别名、拼音缩写，或者一个场景，比如加班"}, "limit": _LIMIT},
             "required": ["q"],
         },
     },

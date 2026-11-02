@@ -189,7 +189,7 @@ def serve(fake: Fake):
             scoped = sorted((fake.memes[s] for s in k["memes"] if s in fake.memes), key=lambda m: -m["heat"])
             if path == "/memes/search" and need("memes:read"):
                 term = q.get("q", "").strip().lower()
-                rows = [m for m in scoped if term in " ".join([m["title"], *m["aliases"]]).lower()]
+                rows = [m for m in scoped if term in " ".join([m["title"], *m["aliases"], m["usage_scenario"]]).lower()]
                 return self.reply(200, [{f: m[f] for f in SUMMARY} for m in rows[:limit]])
             if path.startswith("/memes/") and need("memes:read"):
                 m = next((m for m in scoped if m["slug"] == path[7:]), None)

@@ -18,7 +18,7 @@ def similarity(a: str, b: str) -> float:
 
 
 def search_memes(q: str, rows: list[dict], limit: int) -> list[dict]:
-    """Same match and order as common::memes::search over search_text, which is the title and the aliases."""
+    """Same match and order as common::memes::search. The title and aliases are scored, the usage scenario only has to contain q."""
     q = q.strip()
     if not q:
         return rows[:limit]
@@ -26,8 +26,21 @@ def search_memes(q: str, rows: list[dict], limit: int) -> list[dict]:
     for r in rows:
         text = " ".join([r["title"], *r["aliases"]])
         sim = similarity(text, q)
-        if q.lower() in text.lower() or sim > 0.2:
+        if q.lower() in f"{text} {r.get('usage_scenario', '')}".lower() or sim > 0.2:
             scored.append((sim, r))
+    scored.sort(key=lambda x: (-x[0], -x[1]["heat"]))
+    return [r for _, r in scored[:limit]]
+
+
+def match_memes(text: str, rows: list[dict], limit: int) -> list[dict]:
+    """The reverse of search_memes, the memes whose title or alias is written in the text. The longest name wins."""
+    text = text.lower()
+    scored = []
+    for r in rows:
+        # One character aliases would match nearly any sentence.
+        longest = max((len(n) for n in [r["title"], *r["aliases"]] if len(n) >= 2 and n.lower() in text), default=0)
+        if longest:
+            scored.append((longest, r))
     scored.sort(key=lambda x: (-x[0], -x[1]["heat"]))
     return [r for _, r in scored[:limit]]
 

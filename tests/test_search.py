@@ -1,6 +1,6 @@
 import unittest
 
-from gengwiki._search import search_entries, search_memes, search_stickers, similarity
+from gengwiki._search import match_memes, search_entries, search_memes, search_stickers, similarity
 
 
 def row(title, aliases=(), heat=0):
@@ -8,6 +8,15 @@ def row(title, aliases=(), heat=0):
 
 
 class SearchTest(unittest.TestCase):
+    def test_scenario_is_searched_but_does_not_outrank_a_name(self):
+        rows = [row("牛马", heat=1) | {"usage_scenario": "加班到深夜时"}, row("加班狗", heat=0)]
+        self.assertEqual([r["title"] for r in search_memes("加班", rows, 5)], ["加班狗", "牛马"])
+
+    def test_match_finds_names_written_in_the_text(self):
+        rows = [row("躺平", ["摆烂"], heat=1), row("YYDS", heat=9), row("班味", ["班"], heat=5)]
+        self.assertEqual([r["title"] for r in match_memes("今天彻底摆烂了，yyds", rows, 5)], ["YYDS", "躺平"])
+        self.assertEqual(match_memes("上班好累", rows, 5), [])  # the one character alias does not count
+
     def test_similarity_matches_pg_trgm(self):
         # select similarity('word', 'two words') is 0.363636 in Postgres.
         self.assertAlmostEqual(similarity("word", "two words"), 4 / 11)
