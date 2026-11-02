@@ -205,7 +205,9 @@ class GengWiki:
         )
         if row is None:
             if len(rows) < LIST_MAX:
-                raise NotFoundError(f"{slug!r} is not among this key's memes", 404, "not_found")
+                near = [r["slug"] for r in _search.search_memes(slug, rows, 3)]
+                hint = f", did you mean {near}" if near else ""
+                raise NotFoundError(f"{slug!r} is not among this key's memes{hint}", 404, "not_found")
             # Past the end of the list. Only the server knows whether this key may read it, so cache it per key.
             path = f"/memes/{urllib.parse.quote(slug, safe='')}"
             return Meme.of(self._v1(f"meme:{slug}", path, TTL_LIST, expect=dict))
@@ -288,7 +290,9 @@ class GengWiki:
         except NotFoundError as e:
             raise AccountApiUnavailable(f"{self.site_url} does not expose the persona catalog") from e
         if row is None:
-            raise NotFoundError(f"no published persona {wanted!r}", 404, "not_found")
+            near = [r["title"] for r in _search.search_personas(wanted, self._catalog(wanted, TTL_CATALOG_MISS))]
+            hint = f", did you mean {near}" if near else ""
+            raise NotFoundError(f"no published persona {wanted!r}{hint}", 404, "not_found")
         return row
 
     # ---------- stickers ----------

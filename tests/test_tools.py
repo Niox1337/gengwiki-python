@@ -109,6 +109,11 @@ class ToolsTest(Base):
             self.assertIn("tang-ping", reply["output"])
         self.assertEqual(c.tools.run({"output": [text]}), [])
 
+    def test_a_near_miss_tells_the_model_what_to_ask_for(self):
+        got = json.loads(self.client().tools.call("get_meme", {"slug": "躺平族"}))
+        self.assertEqual(got["error"]["code"], "not_found")
+        self.assertIn("tang-ping", got["error"]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

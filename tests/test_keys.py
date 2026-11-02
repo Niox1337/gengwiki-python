@@ -130,6 +130,14 @@ class SwitchPersonaTest(Base):
         c.use_persona("毒舌老哥")
         self.assertEqual(len(self.fake.keys), count)  # the second time reuses it
 
+    def test_near_miss_names_the_published_persona(self):
+        c = self.client(key=None)
+        c.keys.login("me@example.com", "correct horse")
+        with self.assertRaisesRegex(NotFoundError, "温柔姐姐"):
+            c.use_persona("姐姐")
+        self.assertEqual(self.fake.count("/api/personas"), 1)
+        self.assertNotIn("姐姐", [k["name"] for k in self.fake.keys.values()])
+
     def test_catalog_is_cached_and_filterable(self):
         c = self.client(key=None)
         self.assertEqual(len(c.personas()), 2)
