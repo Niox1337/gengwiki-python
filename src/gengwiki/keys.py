@@ -52,7 +52,10 @@ class Keys:
 
     def secret(self, name: str) -> str:
         """The key itself, for handing to another program."""
-        return self._ring.read()["keys"][name]["key"]
+        e = self._ring.read()["keys"].get(name)
+        if e is None:
+            raise NotFoundError(f"no key saved as {name!r}", 404, "not_found")
+        return e["key"]
 
     def use(self, name: str) -> LocalKey:
         """Switch this client to a saved key, and make it the default for new clients."""
@@ -71,6 +74,8 @@ class Keys:
                 del data["current"]
         if e:
             self._c._store.drop(namespace(e["key"]))
+            if self._c._key == e["key"]:
+                self._c._key = None
 
     # ---------- personas ----------
 

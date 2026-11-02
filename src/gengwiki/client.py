@@ -167,7 +167,13 @@ class GengWiki:
 
     def _token(self) -> str:
         if not self._key:
-            raise AuthError("no API key. Pass api_key, set GENGWIKI_API_KEY, or save one with client.keys.add()", code="unauthorized")
+            saved = [k.name for k in self.keys.local()]
+            hint = (
+                f"Pick a saved key with client.keys.use(), saved keys are {saved}"
+                if saved
+                else f"Create one at {self.site_url}/me, then pass api_key, set GENGWIKI_API_KEY, or save it with client.keys.add()"
+            )
+            raise AuthError(f"no API key. {hint}", code="unauthorized")
         return self._key
 
     def _v1(self, key: str, path: str, ttl: float, *, shared: bool = False, **kwargs) -> Any:

@@ -50,6 +50,22 @@ class LocalKeysTest(Base):
         c.keys.remove("b")
         self.assertEqual([k.name for k in c.keys.local()], ["a"])
 
+    def test_unknown_name_raises_the_sdk_error(self):
+        with self.assertRaises(NotFoundError):
+            self.client(key=None).keys.secret("nope")
+
+    def test_removing_the_current_key_stops_this_client_using_it(self):
+        c = self.client(key=None)
+        c.keys.add("a", KEY_A)
+        c.keys.add("b", KEY_B)
+        c.keys.remove("a")
+        with self.assertRaisesRegex(AuthError, r"keys\.use.*'b'"):
+            c.search_memes()
+
+    def test_no_key_says_where_to_get_one(self):
+        with self.assertRaisesRegex(AuthError, "/me"):
+            self.client(key=None).search_memes()
+
     def test_a_host_never_sees_keys_saved_for_another(self):
         self.client(key=None).keys.add("a", KEY_A)
         c = GengWiki(base_url="http://127.0.0.1:9", site_url=self.url, home=self.dir.name)
