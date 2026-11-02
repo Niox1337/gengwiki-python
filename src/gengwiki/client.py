@@ -13,7 +13,7 @@ from ._http import Http, check_url
 from ._keyring import Keyring
 from ._store import Hit, Store
 from .errors import AuthError, NotFoundError, UnavailableError
-from .models import Meme, MemeSummary
+from .models import Meme, MemeSummary, Persona
 
 log = logging.getLogger("gengwiki")
 
@@ -27,6 +27,8 @@ LIST_MAX = 100
 TTL_LIST = 6 * 3600
 TTL_TRENDING = 15 * 60
 TTL_MISSING = 3600
+# Personas have no edit route, only publish and unpublish.
+TTL_PERSONA = 7 * 86400
 
 _SHARED = "shared"  # data that is the same for every key
 _MISSING = {"__missing__": True}
@@ -179,6 +181,15 @@ class GengWiki:
         # Always the full board, so a different limit later is not another request.
         rows = self._v1(f"trending:{tag}", "/trending", TTL_TRENDING, shared=True, params={"tag": tag, "limit": LIST_MAX})
         return [MemeSummary.of(r) for r in rows[: max(1, min(limit, LIST_MAX))]]
+
+    # ---------- persona ----------
+
+    def persona(self) -> Persona | None:
+        """The persona bound to the current key, or None if it has none."""
+        try:
+            return Persona.of(self._v1("persona", "/persona", TTL_PERSONA, missing_ttl=86400))
+        except NotFoundError:
+            return None
 
 
 def _namespace(key: str | None) -> str:
