@@ -7,14 +7,14 @@ import threading
 import urllib.parse
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from . import _search
 from ._http import Http, check_url
 from ._keyring import Keyring
 from ._store import Hit, Store
 from .errors import AuthError, NotFoundError, UnavailableError
-from .models import Meme, MemeSummary, Persona, Sticker, StickerPack
+from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, RateLimit, Sticker, StickerPack
 
 log = logging.getLogger("gengwiki")
 
@@ -27,6 +27,7 @@ LIST_MAX = 100
 # Seconds. A key's scope is fixed when it is created, so its list only changes when a meme is edited or hidden.
 TTL_LIST = 6 * 3600
 TTL_TRENDING = 15 * 60
+TTL_LEXICON = 3600
 TTL_MISSING = 3600
 # Personas have no edit route, only publish and unpublish.
 TTL_PERSONA = 7 * 86400
@@ -222,6 +223,58 @@ class GengWiki:
             tmp.write_bytes(body)
             os.replace(tmp, path)
             return path
+
+    # ---------- lexicons ----------
+
+    def _lexicons(self) -> list[dict]:
+        return self._v1("lexicons", "/me/lexicons", TTL_LEXICON)
+
+    def _entries(self, lexicon_id: str) -> list[dict]:
+        path = f"/me/lexicons/{urllib.parse.quote(lexicon_id, safe='')}/entries"
+        return self._v1(f"entries:{lexicon_id}", path, TTL_LEXICON)
+
+    def lexicons(self) -> list[Lexicon]:
+        return [Lexicon.of(x) for x in self._lexicons()]
+
+    def lexicon_entries(self, lexicon_id: str) -> list[LexiconEntry]:
+        return [LexiconEntry.of(x) for x in self._entries(lexicon_id)]
+
+    def search_lexicons(self, q: str = "", limit: int = 20) -> list[LexiconEntry]:
+        """Search the entries of all my lexicons. The first call reads each lexicon once."""
+        rows = [e for lex in self._lexicons() for e in self._entries(lex["id"])]
+        return [LexiconEntry.of(e) for e in _search.search_entries(q, rows, max(1, limit))]
+
+    def _post(self, path: str, body: dict) -> dict:
+        return self._http.json("POST", f"{self.base_url}/v1{path}", token=self._token(), body=body)
+
+    def _patch_cached(self, key: str, change: Callable[[list], list]) -> None:
+        """Apply a write we just made to the cached list, so writing does not force a re-read."""
+        hit = self._store.get(self._ns, key)
+        if hit and hit.value != _MISSING:
+            self._store.put(self._ns, key, change(hit.value))
+
+    def create_lexicon(self, name: str, description: str = "") -> Lexicon:
+        row = self._post("/me/lexicons", {"name": name, "description": description})
+        self._patch_cached("lexicons", lambda rows: [*rows, row])
+        return Lexicon.of(row)
+
+    def add_lexicon_entry(
+        self, lexicon_id: str, term: str, *, aliases: Sequence[str] = (), note: str = "", tags: Sequence[str] = ()
+    ) -> LexiconEntry:
+        path = f"/me/lexicons/{urllib.parse.quote(lexicon_id, safe='')}/entries"
+        row = self._post(path, {"term": term, "aliases": list(aliases), "note": note, "tags": list(tags)})
+        self._patch_cached(f"entries:{lexicon_id}", lambda rows: [*rows, row])
+        self._patch_cached("lexicons", lambda rows: [{**x, "entries": x["entries"] + (x["id"] == lexicon_id)} for x in rows])
+        return LexiconEntry.of(row)
+
+    # ---------- usage, always live ----------
+
+    def usage(self) -> dict:
+        """Requests per day over the last 30 days, as the server counted them."""
+        return self._http.json("GET", f"{self.base_url}/v1/me/usage", token=self._token(), retries=1)
+
+    def rate_limit(self) -> RateLimit:
+        return RateLimit.of(self._http.json("GET", f"{self.base_url}/v1/me/rate-limit", token=self._token(), retries=1))
 
 
 def _namespace(key: str | None) -> str:
