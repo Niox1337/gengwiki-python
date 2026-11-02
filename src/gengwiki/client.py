@@ -5,6 +5,7 @@ import logging
 import os
 import threading
 import urllib.parse
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -13,7 +14,7 @@ from ._http import Http, check_url
 from ._keyring import Keyring
 from ._store import Hit, Store
 from .errors import AuthError, NotFoundError, UnavailableError
-from .models import Meme, MemeSummary, Persona
+from .models import Meme, MemeSummary, Persona, Sticker, StickerPack
 
 log = logging.getLogger("gengwiki")
 
@@ -32,6 +33,7 @@ TTL_PERSONA = 7 * 86400
 
 _SHARED = "shared"  # data that is the same for every key
 _MISSING = {"__missing__": True}
+_IMAGE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
 
 class GengWiki:
@@ -190,6 +192,36 @@ class GengWiki:
             return Persona.of(self._v1("persona", "/persona", TTL_PERSONA, missing_ttl=86400))
         except NotFoundError:
             return None
+
+    # ---------- stickers ----------
+
+    def _packs(self) -> list[dict]:
+        return self._v1("packs", "/sticker-packs", TTL_LIST)
+
+    def sticker_packs(self) -> list[StickerPack]:
+        return [StickerPack.of(p) for p in self._packs()]
+
+    def search_stickers(self, q: str = "", limit: int = 20) -> list[Sticker]:
+        """Search this key's stickers by caption, pack title or pack tag. The pack list is never cut off, so this is always local."""
+        return [Sticker.of(s) for s in _search.search_stickers(q, self._packs(), max(1, limit))]
+
+    def sticker_image(self, sticker_id: str) -> Path:
+        """Path of the image on disk, downloaded once. Images never change and the site has a daily image budget."""
+        sid = str(uuid.UUID(sticker_id))  # it names a file, so it must really be a uuid
+        folder = self.home / "stickers"
+        for found in folder.glob(f"{sid}.*"):
+            return found
+        with self._lock:
+            for found in folder.glob(f"{sid}.*"):
+                return found
+            # The image route takes no key and does not count against one.
+            body, headers = self._http.request("GET", f"{self.base_url}/v1/stickers/{sid}/image", retries=1)
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / (sid + _IMAGE_TYPES.get(headers.get_content_type(), ".img"))
+            tmp = folder / f".{sid}.tmp"
+            tmp.write_bytes(body)
+            os.replace(tmp, path)
+            return path
 
 
 def _namespace(key: str | None) -> str:
