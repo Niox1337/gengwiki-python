@@ -124,6 +124,17 @@ class MemeTest(Base):
         with self.assertRaises(AuthError):
             c.search_memes()
 
+    def test_base_url_may_include_v1(self):
+        c = GengWiki(KEY_A, base_url=self.url + "/v1/", site_url=self.url, home=self.dir.name)
+        self.addCleanup(c.close)
+        self.assertEqual(c.base_url, self.url)
+        self.assertEqual(c.search_memes()[0].slug, "tang-ping")
+
+    def test_default_address_is_production(self):
+        c = GengWiki(home=self.dir.name)
+        self.addCleanup(c.close)
+        self.assertEqual(c.base_url, "https://api.gengwiki.niox.lol")
+
     def test_no_key_says_how_to_get_one(self):
         c = GengWiki(base_url=self.url, site_url=self.url, home=self.dir.name)
         self.addCleanup(c.close)

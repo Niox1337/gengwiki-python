@@ -51,7 +51,8 @@ class GengWiki:
         home: str | os.PathLike | None = None,
         timeout: float = 15,
     ):
-        self.base_url = check_url(base_url or os.environ.get("GENGWIKI_API_URL") or DEFAULT_API_URL)
+        # The docs give the API address with /v1, so take it with or without.
+        self.base_url = check_url(base_url or os.environ.get("GENGWIKI_API_URL") or DEFAULT_API_URL).removesuffix("/v1")
         self.site_url = check_url(site_url or os.environ.get("GENGWIKI_SITE_URL") or DEFAULT_SITE_URL)
         # One folder per API host, so a key saved for one host is never sent to another.
         host = urllib.parse.urlsplit(self.base_url).netloc.replace(":", "_")
