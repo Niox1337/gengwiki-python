@@ -123,11 +123,14 @@ class Http:
                 time.sleep(wait)
         raise AssertionError("unreachable")
 
-    def json(self, method: str, url: str, **kwargs):
+    def json(self, method: str, url: str, *, expect: type | None = None, **kwargs):
+        """The decoded body. With expect, anything but that type is a bad response, so it never reaches the cache."""
         body, headers = self.request(method, url, **kwargs)
-        if not body:
-            return None
         try:
-            return json.loads(body)
+            value = json.loads(body) if body else None
         except ValueError as e:
             raise BadResponseError(f"expected JSON from {url}, got {headers.get_content_type()}", code="bad_response") from e
+        # ponytail: checks the outer type, not each row. Check fields if something in front ever rewrites rows.
+        if expect and not isinstance(value, expect):
+            raise BadResponseError(f"expected a JSON {expect.__name__} from {url}", code="bad_response")
+        return value

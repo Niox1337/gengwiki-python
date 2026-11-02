@@ -70,6 +70,7 @@ class Fake:
         self.hits: list[tuple[str, str]] = []
         self.status: int | None = None  # answer everything with this status
         self.html_ok = False  # answer everything with a 200 HTML page, like a captive portal
+        self.json_ok = None  # answer everything with a 200 and this JSON, like a proxy that rewrites replies
         self.account_open = True  # False is what the public site does today
         self.lock = threading.Lock()
 
@@ -151,6 +152,8 @@ def serve(fake: Fake):
                 fake.hits.append((method, path))
                 if fake.html_ok:
                     return self.reply(200, "<html>登录 Wi-Fi</html>".encode(), [("Content-Type", "text/html")])
+                if fake.json_ok is not None:
+                    return self.reply(200, fake.json_ok)
                 if fake.status == 429:
                     return self.reply(429, {"error": {"code": "rate_limited", "message": "x"}}, [("Retry-After", "3600")])
                 if fake.status:

@@ -108,6 +108,7 @@ class GengWiki:
         params: dict | None = None,
         valid: Callable[[Any], bool] | None = None,
         missing_ttl: float = TTL_MISSING,
+        expect: type = list,
     ) -> Any:
         """Return the local copy if it is good, otherwise fetch it. An outage serves the old copy instead of failing."""
 
@@ -135,7 +136,7 @@ class GengWiki:
             usable = hit is not None and hit.value != _MISSING
             try:
                 # With an old copy in hand a retry only delays the answer.
-                value = self._http.json("GET", url, token=token, params=params, retries=0 if usable else 1)
+                value = self._http.json("GET", url, token=token, params=params, retries=0 if usable else 1, expect=expect)
             except NotFoundError:
                 self._store.put(ns, key, _MISSING)
                 raise
@@ -184,12 +185,13 @@ class GengWiki:
                 raise NotFoundError(f"{slug!r} is not among this key's memes", 404, "not_found")
             # Past the end of the list. Only the server knows whether this key may read it, so cache it per key.
             path = f"/memes/{urllib.parse.quote(slug, safe='')}"
-            return Meme.of(self._v1(f"meme:{slug}", path, TTL_LIST))
+            return Meme.of(self._v1(f"meme:{slug}", path, TTL_LIST, expect=dict))
         # The list proved this key may read it, so the text can be shared between keys.
         # The list's updated_at says whether the copy is current, which saves one request per meme.
         updated_at = row["updated_at"]
         path = f"/memes/{urllib.parse.quote(row['slug'], safe='')}"
-        return Meme.of(self._v1(f"meme:{row['slug']}", path, 0, shared=True, valid=lambda m: m.get("updated_at") == updated_at))
+        current = lambda m: m.get("updated_at") == updated_at
+        return Meme.of(self._v1(f"meme:{row['slug']}", path, 0, shared=True, valid=current, expect=dict))
 
     def trending(self, tag: str = "", limit: int = 20) -> list[MemeSummary]:
         """The hot board, site-wide or for one tag. Not limited by the key's scope, so all keys share one copy."""
@@ -200,7 +202,7 @@ class GengWiki:
     # ---------- persona ----------
 
     def _persona_row(self, key: str) -> dict:
-        return self._cached(namespace(key), "persona", f"{self.base_url}/v1/persona", TTL_PERSONA, token=key, missing_ttl=TTL_CATALOG)
+        return self._cached(namespace(key), "persona", f"{self.base_url}/v1/persona", TTL_PERSONA, token=key, missing_ttl=TTL_CATALOG, expect=dict)
 
     def persona(self) -> Persona | None:
         """The persona bound to the current key, or None if it has none."""
@@ -322,7 +324,7 @@ class GengWiki:
         return [LexiconEntry.of(e) for e in _search.search_entries(q, rows, max(1, limit))]
 
     def _post(self, path: str, body: dict) -> dict:
-        return self._http.json("POST", f"{self.base_url}/v1{path}", token=self._token(), body=body)
+        return self._http.json("POST", f"{self.base_url}/v1{path}", token=self._token(), body=body, expect=dict)
 
     def _patch_cached(self, key: str, change: Callable[[list], list]) -> None:
         """Apply a write we just made to the cached list, so writing does not force a re-read."""
@@ -348,10 +350,10 @@ class GengWiki:
 
     def usage(self) -> dict:
         """Requests per day over the last 30 days, as the server counted them."""
-        return self._http.json("GET", f"{self.base_url}/v1/me/usage", token=self._token(), retries=1)
+        return self._http.json("GET", f"{self.base_url}/v1/me/usage", token=self._token(), retries=1, expect=dict)
 
     def rate_limit(self) -> RateLimit:
-        return RateLimit.of(self._http.json("GET", f"{self.base_url}/v1/me/rate-limit", token=self._token(), retries=1))
+        return RateLimit.of(self._http.json("GET", f"{self.base_url}/v1/me/rate-limit", token=self._token(), retries=1, expect=dict))
 
     # ---------- offline ----------
 

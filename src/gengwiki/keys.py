@@ -111,7 +111,7 @@ class Keys:
 
     def login(self, email: str, password: str) -> dict:
         """Log in to manage keys. The password is not kept, only a token that lasts seven days."""
-        r = self._account("POST", "/auth/login", {"email": email, "password": password}, None)
+        r = self._account("POST", "/auth/login", {"email": email, "password": password}, None, dict)
         with self._ring.edit() as data:
             data["session"] = {"token": r["token"], "expires_at": time.time() + r["expires_in"]}
         return r["user"]
@@ -125,9 +125,9 @@ class Keys:
         s = self._ring.read().get("session")
         return bool(s) and s["expires_at"] > time.time()
 
-    def _account(self, method: str, path: str, body: dict | None, token: str | None) -> Any:
+    def _account(self, method: str, path: str, body: dict | None, token: str | None, expect: type | None = None) -> Any:
         try:
-            return self._c._http.json(method, f"{self._c.site_url}/api{path}", token=token, body=body)
+            return self._c._http.json(method, f"{self._c.site_url}/api{path}", token=token, body=body, expect=expect)
         except UnavailableError:
             raise
         except GengWikiError as e:
@@ -138,18 +138,18 @@ class Keys:
                 ) from e
             raise
 
-    def _session(self, method: str, path: str, body: dict | None = None) -> Any:
+    def _session(self, method: str, path: str, body: dict | None = None, expect: type | None = dict) -> Any:
         if not self.logged_in:
             raise AuthError("not logged in. Call client.keys.login(email, password) first", code="unauthorized")
         try:
-            return self._account(method, path, body, self._ring.read()["session"]["token"])
+            return self._account(method, path, body, self._ring.read()["session"]["token"], expect)
         except AuthError:
             self.logout()
             raise
 
     def list(self, *, include_revoked: bool = False) -> list[ApiKey]:
         """All keys on the account, as the server sees them. Always live, this is rare and must be accurate."""
-        rows = [ApiKey.of(r) for r in self._session("GET", "/me/keys")]
+        rows = [ApiKey.of(r) for r in self._session("GET", "/me/keys", expect=list)]
         return rows if include_revoked else [r for r in rows if not r.revoked_at]
 
     def create(
@@ -233,7 +233,7 @@ class Keys:
     def revoke(self, ref: str) -> None:
         """End a key on the server and forget it here."""
         key_id, local, secret = self._resolve(ref)
-        self._session("DELETE", f"/me/keys/{urllib.parse.quote(key_id, safe='')}")
+        self._session("DELETE", f"/me/keys/{urllib.parse.quote(key_id, safe='')}", expect=None)
         if local:
             self.remove(local)
         if secret:

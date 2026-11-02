@@ -164,6 +164,26 @@ class MemeTest(Base):
         for f in c.home.iterdir():
             self.assertNotIn(KEY_A.encode(), f.read_bytes(), f.name)
 
+    def test_wrong_json_is_not_kept(self):
+        c = self.client()
+        self.fake.json_ok = {"message": "ok"}
+        with self.assertRaises(BadResponseError):
+            c.search_memes("躺平")
+        self.fake.json_ok = None
+        self.assertEqual(c.search_memes("躺平")[0].slug, "tang-ping")
+
+    def test_wrong_json_serves_the_stale_copy(self):
+        c = self.client()
+        c.search_memes()
+        c.refresh()
+        self.fake.json_ok = {"message": "ok"}
+        self.assertEqual(c.search_memes("躺平")[0].slug, "tang-ping")
+
+    def test_wrong_json_type_for_a_persona(self):
+        self.fake.json_ok = ["not", "a", "persona"]
+        with self.assertRaises(BadResponseError):
+            self.client().persona()
+
 
 if __name__ == "__main__":
     unittest.main()
