@@ -15,6 +15,7 @@ from ._store import Hit, Store, namespace
 from .errors import AccountApiUnavailable, AuthError, ForbiddenError, NotFoundError, UnavailableError
 from .keys import Keys
 from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, RateLimit, Sticker, StickerPack
+from .tools import Tools
 
 log = logging.getLogger("gengwiki")
 
@@ -68,6 +69,7 @@ class GengWiki:
             saved = self._keyring.read()
             self._key = saved["keys"].get(saved.get("current"), {}).get("key")
         self.keys = Keys(self)
+        self.tools = Tools(self)
 
     def close(self) -> None:
         self._store.close()
