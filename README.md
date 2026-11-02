@@ -110,6 +110,7 @@ while True:
 | `NotFoundError` | 不存在，或不在这个 Key 的范围内 |
 | `RateLimitError` | 触发限流，且本地没有旧数据，`retry_after` 是要等的秒数 |
 | `ServerError` `NetworkError` | 服务不可用，且本地没有旧数据 |
+| `BadResponseError` | 响应状态正常但内容不对，比如公共 Wi-Fi 的登录页，且本地没有旧数据 |
 | `AccountApiUnavailable` | 这个站点没有开放账号接口 |
 
 ## 开发
