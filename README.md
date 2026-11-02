@@ -23,6 +23,8 @@ client.meme("tang-ping").body
 client.persona().as_message()              # {"role": "system", "content": "..."}
 ```
 
+更多用法见 [example/](example/)。
+
 ## 切换人设
 
 一个 Key 终身绑定一个人设，所以切换人设就是切换到绑定了它的 Key。没有这样的 Key 时，登录后会自动创建一个并保存。
