@@ -119,7 +119,7 @@ class Tools:
             result = handler(**args)
         except GengWikiError as e:
             result = {"error": {"code": e.code, "message": e.message}}
-        except (TypeError, ValueError) as e:
+        except (TypeError, ValueError, AttributeError) as e:
             # The model passed bad arguments, tell it so it can try again.
             result = {"error": {"code": "bad_arguments", "message": str(e)}}
         return json.dumps(result, ensure_ascii=False)

@@ -87,6 +87,11 @@ class ToolsTest(Base):
             c.tools.call("search_memes", {"q": q})
         self.assertEqual(c.request_count, 1)
 
+    def test_arguments_of_the_wrong_type_come_back_as_json(self):
+        c = self.client()
+        for name, args in [("get_meme", {"slug": 123}), ("search_memes", {"q": 5}), ("search_memes", "null"), ("search_memes", "[1]")]:
+            self.assertEqual(json.loads(c.tools.call(name, args))["error"]["code"], "bad_arguments", (name, args))
+
 
 if __name__ == "__main__":
     unittest.main()
