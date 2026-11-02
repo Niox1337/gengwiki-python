@@ -3,7 +3,7 @@
 梗Wiki 的 Python SDK，支持 Python 3.10 及以上。
 
 ```bash
-pip install git+https://github.com/Niox1337/gengwiki-python
+pip install gengwiki
 ```
 
 到[个人中心](https://gengwiki.niox.lol/me)创建 Key，然后保存到本机，之后的代码里就不用再写它了。
@@ -23,7 +23,7 @@ client.meme("tang-ping").body
 client.persona().as_message()              # {"role": "system", "content": "..."}
 ```
 
-更多用法见 [example/](example/)。
+更多用法见 [example/](https://github.com/Niox1337/gengwiki-python/tree/main/example)。
 
 ## 切换人设
 
