@@ -41,6 +41,10 @@ def meme(slug, title, heat=1, aliases=(), updated_at="2026-01-01T00:00:00Z"):
 SUMMARY = ("slug", "title", "aliases", "summary", "categories", "heat", "updated_at")
 
 
+class _Replied(Exception):
+    """A scope check already answered, stop routing."""
+
+
 class Fake:
     def __init__(self):
         self.memes = {m["slug"]: m for m in [meme("tang-ping", "躺平", 9, ["摆烂"]), meme("yyds", "YYDS", 5, ["永远的神"])]}
@@ -149,7 +153,10 @@ def serve(fake: Fake):
                 if fake.status:
                     return self.error_reply(fake.status, "internal")
                 if path.startswith("/v1/"):
-                    return self.v1(method, path[3:], q)
+                    try:
+                        return self.v1(method, path[3:], q)
+                    except _Replied:
+                        return
                 if path.startswith("/api/"):
                     if not fake.account_open:
                         return self.reply(404, b"<html>not found</html>", [("Content-Type", "text/html")])
@@ -169,7 +176,7 @@ def serve(fake: Fake):
                 if scope in k["scopes"]:
                     return True
                 self.error_reply(403, "forbidden")
-                return False
+                raise _Replied
 
             limit = max(1, min(int(q.get("limit", 20)), 100))
             scoped = sorted((fake.memes[s] for s in k["memes"] if s in fake.memes), key=lambda m: -m["heat"])
@@ -226,8 +233,7 @@ def serve(fake: Fake):
                 if need("lexicon:read:self"):
                     return self.reply(200, fake.entries[lid])
                 return
-            if k["scopes"]:
-                return self.error_reply(404, "not_found")
+            return self.error_reply(404, "not_found")
 
         def account(self, method, path):
             if method == "GET" and path == "/personas":
