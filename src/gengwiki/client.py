@@ -12,7 +12,8 @@ from . import _search
 from ._http import Http, check_url
 from ._keyring import Keyring
 from ._store import Hit, Store, namespace
-from .errors import AuthError, ForbiddenError, NotFoundError, UnavailableError
+from .errors import AccountApiUnavailable, AuthError, ForbiddenError, NotFoundError, UnavailableError
+from .keys import Keys
 from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, RateLimit, Sticker, StickerPack
 
 log = logging.getLogger("gengwiki")
@@ -30,6 +31,9 @@ TTL_LEXICON = 3600
 TTL_MISSING = 3600
 # Personas have no edit route, only publish and unpublish.
 TTL_PERSONA = 7 * 86400
+TTL_CATALOG = 86400
+# The persona catalog returns at most this many rows, backend/src/personas.rs.
+PERSONA_LIST_MAX = 60
 
 _SHARED = "shared"  # data that is the same for every key
 _MISSING = {"__missing__": True}
@@ -60,6 +64,10 @@ class GengWiki:
         self._keyring = Keyring(self.home / "keys.json")
         self._lock = threading.Lock()
         self._key = api_key or os.environ.get("GENGWIKI_API_KEY")
+        if not self._key:
+            saved = self._keyring.read()
+            self._key = saved["keys"].get(saved.get("current"), {}).get("key")
+        self.keys = Keys(self)
 
     def close(self) -> None:
         self._store.close()
@@ -186,12 +194,64 @@ class GengWiki:
 
     # ---------- persona ----------
 
+    def _persona_row(self, key: str) -> dict:
+        return self._cached(namespace(key), "persona", f"{self.base_url}/v1/persona", TTL_PERSONA, token=key, missing_ttl=TTL_CATALOG)
+
     def persona(self) -> Persona | None:
         """The persona bound to the current key, or None if it has none."""
         try:
-            return Persona.of(self._v1("persona", "/persona", TTL_PERSONA, missing_ttl=86400))
+            return Persona.of(self._persona_row(self._token()))
         except NotFoundError:
             return None
+
+    def use_persona(self, persona: str) -> Persona:
+        """Switch to a persona by title or id. A key binds one persona for life, so switching means switching keys.
+
+        A saved key bound to it is used at once, with no request once its persona has been read. With no such key
+        and a login, one is created and saved, the same way the website does it.
+        """
+        name = self.keys._name_for_persona(persona)
+        if name is None:
+            if not self.keys.logged_in:
+                known = sorted(k.persona_title for k in self.keys.local() if k.persona_title)
+                raise NotFoundError(
+                    f"no saved key is bound to persona {persona!r}, saved personas are {known}. "
+                    "Save a key with keys.add(), or log in with keys.login() to create one",
+                    404,
+                    "not_found",
+                )
+            row = self._catalog_row(persona)
+            name = self.keys.create(row["title"], persona=row["id"]).name
+        row = self._persona_row(self.keys.secret(name))  # read before switching, so a failure leaves the old persona on
+        self.keys.use(name)
+        return Persona.of(row)
+
+    def personas(self, q: str = "") -> list[Persona]:
+        """Published personas to pick from. Where the site hides the catalog, the ones the saved keys are bound to."""
+        q = q.strip()
+        url = f"{self.site_url}/api/personas"
+        try:
+            rows = self._cached(_SHARED, "personas", url, TTL_CATALOG, token=None)
+            if q and len(rows) >= PERSONA_LIST_MAX:
+                # The list is cut off, so only the server can search the rest.
+                return [Persona.of(r) for r in self._cached(_SHARED, f"personas:{q.lower()}", url, TTL_CATALOG, token=None, params={"q": q})]
+        except NotFoundError:
+            rows = [{"id": k.persona_id, "title": k.persona_title} for k in self.keys.local() if k.persona_id]
+        return [Persona.of(r) for r in _search.search_personas(q, rows)]
+
+    def _catalog_row(self, wanted: str) -> dict:
+        """One persona from the catalog with its memes and packs, by exact id or title."""
+        url = f"{self.site_url}/api/personas"
+        try:
+            rows = self._cached(_SHARED, "personas", url, TTL_CATALOG, token=None)
+            if len(rows) >= PERSONA_LIST_MAX:
+                rows = self._cached(_SHARED, f"personas:{wanted.lower()}", url, TTL_CATALOG, token=None, params={"q": wanted})
+        except NotFoundError as e:
+            raise AccountApiUnavailable(f"{self.site_url} does not expose the persona catalog") from e
+        row = next((r for r in rows if wanted == r["id"] or wanted.casefold() == r["title"].casefold()), None)
+        if row is None:
+            raise NotFoundError(f"no published persona {wanted!r}", 404, "not_found")
+        return row
 
     # ---------- stickers ----------
 
