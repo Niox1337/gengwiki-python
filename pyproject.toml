@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
+[project.scripts]
+gengwiki = "gengwiki.__main__:main"
+
 [build-system]
 requires = ["uv_build>=0.8,<1"]
 build-backend = "uv_build"
