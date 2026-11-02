@@ -35,6 +35,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(302, b"", [("Location", "/ok")])
         elif self.path == "/gzip":
             self._send(200, gzip.compress(b'{"a": 1}'), [("Content-Encoding", "gzip")])
+        elif self.path == "/cut":
+            self.send_response(200)
+            self.send_header("Content-Length", "100")
+            self.end_headers()
+            self.wfile.write(b'{"a"')
+        elif self.path == "/badgzip":
+            self._send(200, b"not gzip at all", [("Content-Encoding", "gzip")])
         elif self.path == "/flaky" and Handler.fail_first:
             Handler.fail_first -= 1
             self._send(500)
@@ -104,6 +111,11 @@ class HttpTest(unittest.TestCase):
         for bad in ("http://a.b", "ftp://localhost", "localhost:8081"):
             with self.assertRaises(ValueError):
                 check_url(bad)
+
+    def test_response_cut_short_or_damaged_is_a_network_error(self):
+        for path in ("/cut", "/badgzip"):
+            with self.assertRaises(NetworkError, msg=path):
+                self.http.json("GET", f"{self.base}{path}")
 
 
 if __name__ == "__main__":

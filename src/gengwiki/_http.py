@@ -2,12 +2,14 @@
 
 import email.message
 import gzip
+import http.client
 import ipaddress
 import json
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 
 from . import __version__
 from .errors import (
@@ -79,15 +81,16 @@ class Http:
         try:
             with self._opener.open(req, timeout=self.timeout) as res:
                 body, headers = res.read(), res.headers
+            if headers.get("Content-Encoding") == "gzip":
+                body = gzip.decompress(body)
+            return body, headers
         except urllib.error.HTTPError as e:
             with e:
                 _raise_for(e.code, e.read(), e.headers)
             raise  # unreachable, _raise_for always raises
-        except (OSError, EOFError) as e:
-            raise NetworkError(f"cannot reach {req.host}: {e}") from e
-        if headers.get("Content-Encoding") == "gzip":
-            body = gzip.decompress(body)
-        return body, headers
+        # A connection cut mid-response or a damaged body is the same outage to the caller.
+        except (OSError, EOFError, http.client.HTTPException, zlib.error) as e:
+            raise NetworkError(f"cannot reach {req.host}: {e!r}") from e
 
     def request(
         self,
