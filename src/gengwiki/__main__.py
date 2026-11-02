@@ -106,6 +106,8 @@ def _meme(c: GengWiki, a) -> None:
     if m.aliases:
         print("别名  " + "、".join(m.aliases))
     print(f"\n{m.body or m.summary}")
+    if m.usage_scenario:
+        print(f"\n使用场景  {m.usage_scenario}")
     for example in m.usage_examples:
         print(f"\n  {example}")
 

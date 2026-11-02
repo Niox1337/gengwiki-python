@@ -27,6 +27,7 @@ def meme(slug, title, heat=1, aliases=(), updated_at="2026-01-01T00:00:00Z"):
         "title": title,
         "aliases": list(aliases),
         "summary": f"{title}的释义",
+        "usage_scenario": f"{title}的场景",
         "body": f"{title}的正文",
         "usage_examples": [f"{title}的例句"],
         "categories": ["网络"],
@@ -38,7 +39,7 @@ def meme(slug, title, heat=1, aliases=(), updated_at="2026-01-01T00:00:00Z"):
     }
 
 
-SUMMARY = ("slug", "title", "aliases", "summary", "categories", "heat", "updated_at")
+SUMMARY = ("slug", "title", "aliases", "summary", "usage_scenario", "categories", "heat", "updated_at")
 
 
 class _Replied(Exception):

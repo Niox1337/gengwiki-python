@@ -11,6 +11,7 @@ for meme in client.search_memes("躺平", limit=5):
 # 查看详情，可以用 slug，也可以用标题或别名
 meme = client.meme("躺平")
 print(meme.body)
+print(meme.usage_scenario)
 print(meme.usage_examples)
 
 # 全站热门榜

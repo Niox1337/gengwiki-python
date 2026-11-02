@@ -29,7 +29,19 @@ class ToolsTest(Base):
     def test_reply_is_trimmed_and_readable_chinese(self):
         text = self.client().tools.call("search_memes", '{"q": "躺平"}')
         self.assertIn("躺平", text)
-        self.assertEqual(set(json.loads(text)[0]), {"slug", "title", "aliases", "summary"})
+        self.assertEqual(set(json.loads(text)[0]), {"slug", "title", "aliases", "summary", "usage_scenario"})
+
+    def test_scenario_comes_with_the_search_so_no_detail_request(self):
+        c = self.client()
+        for name, args in [("search_memes", {"q": "躺平"}), ("trending_memes", {})]:
+            self.assertEqual(json.loads(c.tools.call(name, args))[0]["usage_scenario"], "躺平的场景", name)
+        self.assertEqual(self.fake.count("/v1/memes/tang-ping"), 0)
+
+    def test_empty_scenario_is_left_out(self):
+        self.fake.memes["tang-ping"]["usage_scenario"] = ""
+        c = self.client()
+        self.assertNotIn("usage_scenario", json.loads(c.tools.call("search_memes", {"q": "躺平"}))[0])
+        self.assertNotIn("usage_scenario", json.loads(c.tools.call("get_meme", {"slug": "tang-ping"})))
 
     def test_get_meme_has_the_full_text(self):
         got = json.loads(self.client().tools.call("get_meme", {"slug": "摆烂"}))

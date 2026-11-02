@@ -22,6 +22,7 @@ class MemeSummary(Model):
     title: str = ""
     aliases: list[str] = field(default_factory=list)
     summary: str = ""
+    usage_scenario: str = ""
     categories: list[str] = field(default_factory=list)
     heat: int = 0
     updated_at: str = ""

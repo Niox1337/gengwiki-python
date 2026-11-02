@@ -71,6 +71,7 @@ class CliTest(Base):
     def test_reads_and_sync(self):
         self.run_cli("keys", "add", "a")
         self.assertIn("躺平的正文", self.run_cli("meme", "摆烂")[1])
+        self.assertIn("躺平的场景", self.run_cli("meme", "摆烂")[1])
         self.assertIn("tang-ping", self.run_cli("trending")[1])
         self.assertIn("温柔姐姐", self.run_cli("personas", "姐姐")[1])
         self.assertIn("梗 2 个", self.run_cli("sync", "--images")[1])

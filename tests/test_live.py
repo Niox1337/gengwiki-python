@@ -84,6 +84,9 @@ class LiveTest(unittest.TestCase):
         m = self.c.meme("摆烂")
         self.assertEqual((m.slug, m.body, m.usage_examples), ("tang-ping", "躺平的正文", ["我躺平了"]))
         self.assertEqual(m.related[0].slug, "da-gong-ren")
+        self.assertEqual((m.usage_scenario, m.related[0].usage_scenario), ("加班后吐槽", "加班后吐槽"))
+        self.assertEqual(self.c.search_memes("躺平")[0].usage_scenario, "加班后吐槽")
+        self.assertEqual(self.c.trending()[0].usage_scenario, "加班后吐槽")
         before = self.c.request_count
         self.c.refresh()
         self.c.meme("tang-ping")  # the list is fetched again, its updated_at must equal the detail's

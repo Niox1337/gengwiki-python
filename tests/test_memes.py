@@ -5,7 +5,7 @@ from unittest import mock
 
 from gengwiki import AuthError, BadResponseError, GengWiki, NotFoundError, RateLimitError, ServerError
 from gengwiki.client import OUTAGE_PAUSE
-from tests.fake import KEY_A, KEY_B, Fake, meme, serve
+from tests.fake import KEY_A, KEY_B, SUMMARY, Fake, meme, serve
 
 
 class Base(unittest.TestCase):
@@ -165,6 +165,19 @@ class MemeTest(Base):
         c.close()
         for f in c.home.iterdir():
             self.assertNotIn(KEY_A.encode(), f.read_bytes(), f.name)
+
+    def test_scenario_on_lists_detail_and_related(self):
+        self.fake.memes["tang-ping"]["related"] = [{"slug": "yyds", "usage_scenario": "夸人时"}]
+        c = self.client()
+        self.assertEqual(c.search_memes("躺平")[0].usage_scenario, "躺平的场景")
+        self.assertEqual(c.trending()[0].usage_scenario, "躺平的场景")
+        self.assertEqual(c.meme("tang-ping").usage_scenario, "躺平的场景")
+        self.assertEqual(c.meme("tang-ping").related[0].usage_scenario, "夸人时")
+
+    def test_a_server_without_scenario_still_works(self):
+        older = tuple(f for f in SUMMARY if f != "usage_scenario")
+        with mock.patch("tests.fake.SUMMARY", older):
+            self.assertEqual(self.client().search_memes("躺平")[0].usage_scenario, "")
 
     def test_wrong_json_is_not_kept(self):
         c = self.client()

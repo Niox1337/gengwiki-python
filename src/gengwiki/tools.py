@@ -13,7 +13,7 @@ _LIMIT = {"type": "integer", "description": "返回条数"}
 _DEFINITIONS = [
     {
         "name": "search_memes",
-        "description": "搜索中文网络热梗，返回释义。遇到不认识的网络用语时调用。",
+        "description": "搜索中文网络热梗，返回释义和使用场景。遇到不认识的网络用语时调用。",
         "parameters": {
             "type": "object",
             "properties": {"q": {"type": "string", "description": "梗的关键词、别名或拼音缩写"}, "limit": _LIMIT},
@@ -22,7 +22,7 @@ _DEFINITIONS = [
     },
     {
         "name": "get_meme",
-        "description": "查看一个梗的完整解释和用法例句。搜索结果的释义不够用时调用。",
+        "description": "查看一个梗的完整解释和用法例句。搜索结果的释义和使用场景不够用时调用。",
         "parameters": {
             "type": "object",
             "properties": {"slug": {"type": "string", "description": "search_memes 返回的 slug，也可以是梗的准确名称"}},
@@ -59,7 +59,9 @@ _DEFINITIONS = [
 
 
 def _summary(m) -> dict:
-    return {"slug": m.slug, "title": m.title, "aliases": m.aliases, "summary": m.summary}
+    row = {"slug": m.slug, "title": m.title, "aliases": m.aliases, "summary": m.summary}
+    # Most memes have none yet, and an empty field still costs tokens.
+    return {**row, "usage_scenario": m.usage_scenario} if m.usage_scenario else row
 
 
 def _handlers(c: "GengWiki") -> dict[str, Callable[..., Any]]:

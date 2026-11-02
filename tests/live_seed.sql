@@ -9,6 +9,8 @@ insert into memes (slug, title, aliases, summary, body, usage_examples, categori
     ('50-percent', '百分之50%', '{}', '带符号的标题', '正文', '{}', '{}', 50),
     ('under_score', 'Snake_Case 梗', '{}', '带下划线的标题', '正文', '{}', '{}', 40);
 
+update memes set usage_scenario = '加班后吐槽' where slug in ('tang-ping', 'da-gong-ren');
+
 insert into meme_relations (meme_id, related_id)
 select a.id, b.id from memes a, memes b where a.slug = 'tang-ping' and b.slug = 'da-gong-ren';
 
