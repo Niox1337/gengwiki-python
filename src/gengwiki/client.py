@@ -13,7 +13,7 @@ from . import _search
 from ._http import Http, check_url
 from ._keyring import Keyring
 from ._store import Hit, Store
-from .errors import AuthError, NotFoundError, UnavailableError
+from .errors import AuthError, ForbiddenError, NotFoundError, UnavailableError
 from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, RateLimit, Sticker, StickerPack
 
 log = logging.getLogger("gengwiki")
@@ -275,6 +275,38 @@ class GengWiki:
 
     def rate_limit(self) -> RateLimit:
         return RateLimit.of(self._http.json("GET", f"{self.base_url}/v1/me/rate-limit", token=self._token(), retries=1))
+
+    # ---------- offline ----------
+
+    def sync(self, *, images: bool = False) -> dict[str, int]:
+        """Download everything this key can see, so later calls need no network.
+
+        Costs one request per meme the first time and nothing when run again. An interrupted sync resumes where it stopped.
+        """
+        before = self.request_count
+        summary = {"memes": 0, "stickers": 0, "images": 0}
+
+        def allowed(step: Callable[[], Any], default: Any = None) -> Any:
+            # A key without the scope simply has nothing to sync there.
+            try:
+                return step()
+            except ForbiddenError:
+                return default
+
+        for row in allowed(self._list, []):
+            self.meme(row["slug"])
+            summary["memes"] += 1
+        allowed(self.persona)
+        allowed(self.trending)
+        for pack in allowed(self.sticker_packs, []):
+            for sticker in pack.stickers:
+                summary["stickers"] += 1
+                if images:
+                    self.sticker_image(sticker.id)
+                    summary["images"] += 1
+        allowed(self.search_lexicons)
+        summary["requests"] = self.request_count - before
+        return summary
 
 
 def _namespace(key: str | None) -> str:
