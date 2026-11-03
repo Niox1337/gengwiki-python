@@ -24,8 +24,8 @@ from .errors import (
     UnavailableError,
 )
 from .keys import Keys
-from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, RateLimit, Sticker, StickerPack
-from .tools import Tools
+from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, Person, RateLimit, Sticker, StickerPack
+from .tools import QUOTE_MODES, Tools
 
 log = logging.getLogger("gengwiki")
 
@@ -70,7 +70,12 @@ class GengWiki:
         site_url: str | None = None,
         home: str | os.PathLike | None = None,
         timeout: float = 15,
+        quotes: str = "cite",
     ):
+        """quotes is what the model may do with a person's quotes: off, cite, use or both."""
+        if quotes not in QUOTE_MODES:
+            raise ValueError(f"quotes must be one of {QUOTE_MODES}, got {quotes!r}")
+        self.quotes = quotes
         # The docs give the API address with /v1, so take it with or without.
         self.base_url = check_url(base_url or os.environ.get("GENGWIKI_API_URL") or DEFAULT_API_URL).removesuffix("/v1")
         self.site_url = check_url(site_url or os.environ.get("GENGWIKI_SITE_URL") or DEFAULT_SITE_URL)
@@ -373,6 +378,32 @@ class GengWiki:
             os.replace(tmp, path)
             return path
 
+    # ---------- people ----------
+
+    def _linked_people(self) -> list[dict]:
+        return self._v1("people-linked", "/people/linked", TTL_LIST)
+
+    def linked_people(self) -> list[Person]:
+        """The people picked for this key."""
+        return [Person.of(r) for r in self._linked_people()]
+
+    def _all_people(self) -> list[dict]:
+        rows: list[dict] = []
+        while True:
+            page = self._v1(f"people:{len(rows)}", "/people", TTL_CATALOG, shared=True, params={"limit": LIST_MAX, "offset": len(rows)})
+            rows += page
+            if len(page) < LIST_MAX:
+                return rows
+
+    def people(self, q: str = "") -> list[Person]:
+        """Every published person, or those matching q. Not limited by the key's scope, so all keys share one copy."""
+        return [Person.of(r) for r in _search.search_people(q, self._all_people())]
+
+    def person(self, wanted: str) -> Person:
+        """One person by id, exact name or exact alias, with the memes that name them."""
+        path = f"/people/{urllib.parse.quote(wanted.strip(), safe='')}"
+        return Person.of(self._v1(f"person:{wanted.strip().lower()}", path, TTL_LIST, shared=True, expect=dict))
+
     # ---------- lexicons ----------
 
     def _lexicons(self) -> list[dict]:
@@ -452,6 +483,8 @@ class GengWiki:
                 summary["stickers"] += 1
                 if images and allowed(lambda sid=sticker.id: self.sticker_image(sid)):
                     summary["images"] += 1
+        allowed(self.linked_people)
+        allowed(self.people)
         allowed(self.search_lexicons)
         summary["requests"] = self.request_count - before
         return summary

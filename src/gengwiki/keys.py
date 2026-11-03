@@ -164,20 +164,22 @@ class Keys:
         persona: str | None = None,
         memes: Sequence[str] = (),
         packs: Sequence[str] = (),
+        people: Sequence[str] = (),
         scopes: Sequence[str] | None = None,
     ) -> LocalKey:
         """Create a key and save it here, since the server shows the secret only this once.
 
-        As on the website, picking a persona (by title or id) also brings in its memes and sticker packs.
+        As on the website, picking a persona (by title or id) also brings in its memes, sticker packs and people.
         """
-        memes, packs = list(memes), list(packs)
+        memes, packs, people = list(memes), list(packs), list(people)
         persona_id = None
         if persona:
             row = self._c._catalog_row(persona)
             persona_id = row["id"]
             memes = list(dict.fromkeys([*memes, *(m["slug"] for m in row["memes"])]))
             packs = list(dict.fromkeys([*packs, *(p["id"] for p in row["packs"])]))
-        body: dict[str, Any] = {"name": name, "memes": memes, "packs": packs, "persona": persona_id}
+            people = list(dict.fromkeys([*people, *(p["id"] for p in row.get("people", []))]))
+        body: dict[str, Any] = {"name": name, "memes": memes, "packs": packs, "people": people, "persona": persona_id}
         if scopes is not None:
             body["scopes"] = list(scopes)
         return self._save(self._session("POST", "/me/keys", body))

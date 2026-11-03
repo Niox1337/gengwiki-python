@@ -65,6 +65,7 @@ class Persona(Model):
     author: str | None = None
     memes: list[dict] = field(default_factory=list)
     packs: list[dict] = field(default_factory=list)
+    people: list[dict] = field(default_factory=list)
 
     def as_message(self) -> dict[str, str]:
         """The system message for any chat completions style API."""
@@ -92,6 +93,18 @@ class StickerPack(Model):
     def of(cls, d: dict):
         stickers = [Sticker.of({**s, "pack_id": d.get("id", ""), "pack_title": d.get("title", "")}) for s in d.get("stickers", [])]
         return super().of({**d, "stickers": stickers})
+
+
+@dataclass(frozen=True)
+class Person(Model):
+    id: str = ""
+    name: str = ""
+    aliases: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    bio: str = ""
+    quotes: list[str] = field(default_factory=list)
+    # Only one person looked up by client.person() has these, the memes that name them.
+    memes: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -132,6 +145,7 @@ class ApiKey(Model):
     memes: list[dict] = field(default_factory=list)
     persona: dict | None = None
     packs: list[dict] = field(default_factory=list)
+    people: list[dict] = field(default_factory=list)
     created_at: str = ""
     last_used_at: str | None = None
     revoked_at: str | None = None

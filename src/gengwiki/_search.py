@@ -62,6 +62,12 @@ def search_personas(q: str, rows: list[dict]) -> list[dict]:
     return [r for r in rows if q in " ".join([r["title"], r.get("description", ""), *r.get("tags", [])]).lower()]
 
 
+def search_people(q: str, rows: list[dict]) -> list[dict]:
+    """Same match as the API's strpos over the name, aliases, tags, bio and quotes."""
+    q = q.strip().lower()
+    return [r for r in rows if q in " ".join([r["name"], *r["aliases"], *r["tags"], r["bio"], *r["quotes"]]).lower()]
+
+
 def search_entries(q: str, entries: list[dict], limit: int) -> list[dict]:
     q = q.strip().lower()
     return [e for e in entries if q in " ".join([e["term"], *e["aliases"], e["note"], *e["tags"]]).lower()][:limit]

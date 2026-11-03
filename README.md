@@ -66,7 +66,7 @@ while True:
 
 Claude 的回复用法相同，只是追加时写成 `{"role": "assistant", "content": reply.content}`。Responses API 把 `response` 传给 `run`，追加时写成 `input += [*response.output, *results]`。
 
-人设只需要写性格和说话方式。查梗和发表情的步骤放在 `client.tools.guide()` 里，它还列出了这个 Key 能用的全部表情说明，放在系统提示词里人设的后面就行。
+人设只需要写性格和说话方式。查梗和发表情的步骤放在 `client.tools.guide()` 里，它还列出了这个 Key 关联的人物和能用的全部表情说明，放在系统提示词里人设的后面就行。
 
 ```python
 system = f"{client.persona().prompt}\n\n{client.tools.guide()}"
@@ -76,7 +76,30 @@ system = f"{client.persona().prompt}\n\n{client.tools.guide()}"
 
 想让模型不等提问就玩梗，把 `client.meme_prompt(用户的话)` 放进提示词。它会优先带上这句话提到的梗，再随机补一些 Key 范围内的梗和热门梗，并告诉模型只在非常贴切时才用。`client.match_memes(用户的话)` 返回这句话提到了哪些梗，可以用来决定机器人要不要插话。两个方法都不调用模型，缓存好之后也不发请求。
 
-共有 5 个工具，分别是 `search_memes`、`get_meme`、`trending_memes`、`search_stickers` 和 `search_lexicon`。可以用 `client.tools.openai(["search_memes"])` 只选其中几个。
+共有 7 个工具，分别是 `search_memes`、`get_meme`、`trending_memes`、`search_stickers`、`search_people`、`get_person` 和 `search_lexicon`。可以用 `client.tools.openai(["search_memes"])` 只选其中几个。
+
+## 人物
+
+```python
+client.person("鲁迅")        # 特定人物，按 id、名字或别名，附带提到他的梗
+client.people("作家")        # 全部人物，可以搜索，不受 Key 范围限制
+client.linked_people()       # 这个 Key 关联的人物
+```
+
+Key 关联的人物会自动进入 `client.tools.guide()`，模型不用查就认识他们。人物有语录时，用 `quotes` 选择模型怎么对待语录，这会改变提示词里的指令，也决定工具结果带不带语录。
+
+| `quotes` | 含义 |
+|---|---|
+| `off` | 不使用。提示词和工具结果都不带语录，并要求模型不要引用 |
+| `cite` | 引用，这是默认值。贴切时照抄原话并说明是谁说的 |
+| `use` | 直接使用。贴切时当成自己的话说出来，用户问起出处时如实说 |
+| `both` | 引用和使用。两种都可以，模型看场合选 |
+
+```python
+client = GengWiki(quotes="both")
+```
+
+需要 Key 勾选了 `people:read`，旧 Key 没有这个权限，要新建一个。
 
 ## 开发
 

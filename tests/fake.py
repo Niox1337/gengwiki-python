@@ -15,8 +15,10 @@ PERSONA_A = "11111111-1111-1111-1111-111111111111"
 PERSONA_B = "22222222-2222-2222-2222-222222222222"
 PACK = "33333333-3333-3333-3333-333333333333"
 STICKER = "44444444-4444-4444-4444-444444444444"
+LU_XUN = "55555555-5555-5555-5555-555555555555"
+DU_FU = "66666666-6666-6666-6666-666666666666"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 16
-ALL_SCOPES = ["memes:read", "trending:read", "persona:read", "stickers:read", "lexicon:read:self", "lexicon:write:self"]
+ALL_SCOPES = ["memes:read", "trending:read", "persona:read", "stickers:read", "people:read", "lexicon:read:self", "lexicon:write:self"]
 TOKEN = "jwt-token"
 
 
@@ -62,8 +64,12 @@ class Fake:
                 "stickers": [{"id": STICKER, "caption": "震惊"}],
             }
         }
+        self.people = {
+            LU_XUN: {"id": LU_XUN, "name": "鲁迅", "aliases": ["周树人"], "tags": ["作家"], "bio": "现代文学家", "quotes": ["我家门前有两棵树"]},
+            DU_FU: {"id": DU_FU, "name": "杜甫", "aliases": [], "tags": ["诗人"], "bio": "唐代诗人", "quotes": []},
+        }
         self.keys = {
-            KEY_A: self._key(KEY_A, "a", PERSONA_A, ["tang-ping", "yyds"], [PACK]),
+            KEY_A: self._key(KEY_A, "a", PERSONA_A, ["tang-ping", "yyds"], [PACK], people=[LU_XUN]),
             KEY_B: self._key(KEY_B, "b", PERSONA_B, ["yyds"], []),
         }
         self.lexicons: dict[str, dict] = {}
@@ -87,9 +93,10 @@ class Fake:
             "status": "published",
             "memes": [{"slug": s, "title": s, "summary": ""} for s in memes],
             "packs": [{"id": p, "title": "猫猫", "cover": STICKER} for p in packs],
+            "people": [{"id": LU_XUN, "name": "鲁迅", "aliases": ["周树人"], "quotes": 1}] if packs else [],
         }
 
-    def _key(self, token, name, persona, memes, packs, scopes=None):
+    def _key(self, token, name, persona, memes, packs, scopes=None, people=()):
         return {
             "id": str(uuid.uuid4()),
             "name": name,
@@ -98,6 +105,7 @@ class Fake:
             "memes": memes,
             "persona": persona,
             "packs": packs,
+            "people": list(people),
             "revoked": False,
         }
 
@@ -111,6 +119,7 @@ class Fake:
             "memes": [{"slug": s, "title": s} for s in k["memes"]],
             "persona": {"id": k["persona"], "title": title} if k["persona"] else None,
             "packs": [{"id": p, "title": "猫猫"} for p in k["packs"]],
+            "people": [{"id": p, "name": self.people[p]["name"]} for p in k["people"]],
             "created_at": "2026-01-01T00:00:00Z",
             "last_used_at": None,
             "revoked_at": "2026-01-02T00:00:00Z" if k["revoked"] else None,
@@ -211,6 +220,15 @@ def serve(fake: Fake):
                 return self.reply(200, packs)
             if path == "/stickers/search" and need("stickers:read"):
                 return self.reply(200, [])
+            if path == "/people/linked" and need("people:read"):
+                return self.reply(200, [fake.people[p] for p in k["people"]])
+            if path == "/people" and need("people:read"):
+                offset = int(q.get("offset", 0))
+                return self.reply(200, list(fake.people.values())[offset : offset + limit])
+            if path.startswith("/people/") and need("people:read"):
+                wanted = path[8:].lower()
+                p = next((p for p in fake.people.values() if wanted in (p["id"], p["name"].lower(), *map(str.lower, p["aliases"]))), None)
+                return self.reply(200, {**p, "memes": [{"slug": "tang-ping", "title": "躺平", "summary": ""}]}) if p else self.error_reply(404, "not_found")
             if path == "/me/usage":
                 return self.reply(200, {"per_day": 100000, "days": [{"day": "2026-01-01", "requests": 3}]})
             if path == "/me/rate-limit":
@@ -257,7 +275,7 @@ def serve(fake: Fake):
             if path == "/me/keys" and method == "POST":
                 b = self.body()
                 token = f"gwk_live_{uuid.uuid4().hex}{uuid.uuid4().hex[:16]}"
-                k = fake._key(token, b["name"], b.get("persona"), b.get("memes", []), b.get("packs", []), b.get("scopes"))
+                k = fake._key(token, b["name"], b.get("persona"), b.get("memes", []), b.get("packs", []), b.get("scopes"), b.get("people", []))
                 fake.keys[token] = k
                 return self.reply(201, {"key": token, "api_key": fake.public_key(k)})
             parts = path.split("/")  # ['', 'me', 'keys', id, 'rotate']
@@ -268,7 +286,7 @@ def serve(fake: Fake):
             if method == "DELETE":
                 return self.reply(204)
             token = f"gwk_live_{uuid.uuid4().hex}{uuid.uuid4().hex[:16]}"
-            k = fake._key(token, old["name"], old["persona"], old["memes"], old["packs"], old["scopes"])
+            k = fake._key(token, old["name"], old["persona"], old["memes"], old["packs"], old["scopes"], old["people"])
             fake.keys[token] = k
             return self.reply(200, {"key": token, "api_key": fake.public_key(k)})
 
