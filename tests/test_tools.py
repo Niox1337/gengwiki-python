@@ -18,6 +18,23 @@ class ToolsTest(Base):
         self.assertEqual([t["name"] for t in claude], ["get_meme"])
         self.assertIn("slug", claude[0]["input_schema"]["properties"])
 
+    def test_guide_lists_the_stickers_of_this_key(self):
+        c = self.client()
+        guide = c.tools.guide()
+        self.assertIn("search_memes", guide)
+        self.assertIn("<stickers>\n- 震惊\n</stickers>", guide)
+        self.assertIn("search_stickers", guide)
+        self.assertIn("自己发", c.tools.guide("自己发"))
+        c.tools.guide()
+        self.assertEqual(self.fake.count("/v1/sticker-packs"), 1)
+
+    def test_guide_without_stickers_leaves_them_out(self):
+        for change in ({"packs": []}, {"scopes": ["memes:read"]}):
+            self.fake.keys[KEY_A].update(change)
+            guide = self.client().tools.guide()
+            self.assertIn("search_memes", guide)
+            self.assertNotIn("<stickers>", guide)
+
     def test_every_definition_has_a_handler_that_runs(self):
         c = self.client()
         args = {"q": "躺平", "slug": "tang-ping"}

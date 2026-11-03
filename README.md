@@ -66,6 +66,14 @@ while True:
 
 Claude 的回复用法相同，只是追加时写成 `{"role": "assistant", "content": reply.content}`。Responses API 把 `response` 传给 `run`，追加时写成 `input += [*response.output, *results]`。
 
+人设只需要写性格和说话方式。查梗和发表情的步骤放在 `client.tools.guide()` 里，它还列出了这个 Key 能用的全部表情说明，放在系统提示词里人设的后面就行。
+
+```python
+system = f"{client.persona().prompt}\n\n{client.tools.guide()}"
+```
+
+模型默认用 Markdown 图片发表情。如果你的程序能自己发图片，传入自己的规则，比如 `client.tools.guide("发送时调用 send_sticker，传入这条说明。")`。
+
 想让模型不等提问就玩梗，把 `client.meme_prompt(用户的话)` 放进提示词。它会优先带上这句话提到的梗，再随机补一些 Key 范围内的梗和热门梗，并告诉模型只在非常贴切时才用。`client.match_memes(用户的话)` 返回这句话提到了哪些梗，可以用来决定机器人要不要插话。两个方法都不调用模型，缓存好之后也不发请求。
 
 共有 5 个工具，分别是 `search_memes`、`get_meme`、`trending_memes`、`search_stickers` 和 `search_lexicon`。可以用 `client.tools.openai(["search_memes"])` 只选其中几个。

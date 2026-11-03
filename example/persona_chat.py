@@ -11,7 +11,8 @@ llm = OpenAI(base_url="https://api.deepseek.com", api_key=os.environ.get("DEEPSE
 
 # 选一个人设，它决定了说话风格和能查到的梗
 persona = client.use_persona("毒舌老哥")
-messages = [persona.as_message()]
+# 人设只管性格，查梗和发表情的步骤由 guide 告诉模型
+messages = [{"role": "system", "content": f"{persona.prompt}\n\n{client.tools.guide()}"}]
 
 while question := input("你 "):
     messages.append({"role": "user", "content": question})
