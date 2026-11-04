@@ -105,6 +105,8 @@ client = GengWiki(quotes="both")
 
 三个 0 到 1 的参数决定多少比例的回复可以主动玩梗、用语录和发表情。每条回复由代码掷一次，掷中了才把素材给模型，模型再按语境决定用不用、用哪个，所以实际比例不会超过这个数。
 
+掷中后模型会尽量用上一个梗，认真求助或倾诉时除外。用 DeepSeek 和一个人设测试时，掷中的回复约一半用了梗，所以 `meme_frequency=0.2` 大约对应一成的回复。比例因模型和人设而异，也可能有硬凑的情况，觉得太多就调低。
+
 ```python
 client = GengWiki(meme_frequency=0.3, quote_frequency=0.2, sticker_frequency=0.5)
 
@@ -118,7 +120,7 @@ messages = [
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| `meme_frequency` | 1 | 掷中时 `turn.prompt` 带上一批梗，模型被问到时仍然可以查梗 |
+| `meme_frequency` | 0.2 | 掷中时 `turn.prompt` 带上一批梗，并要求模型尽量用上一个。模型被问到时仍然可以查梗 |
 | `quote_frequency` | 1 | 掷中时带上语录。Key 没有关联带语录的人物，或者 `quotes="off"` 时无效 |
 | `sticker_frequency` | 1 | 掷中时带上表情说明 |
 
@@ -127,7 +129,7 @@ messages = [
 - 频率为 0 时不带素材，`search_stickers` 工具也不再返回结果。直接调用 `client.search_stickers()` 不受频率影响。
 - 频率为 1 时，表情说明和语录留在 `guide()` 里，方便模型服务的提示词缓存，这也是一直以来的行为。频率在 0 和 1 之间时，它们只在掷中的回复里出现，所以只调用 `guide()` 不调用 `turn()` 的话，模型拿不到它们。
 
-`client.meme_prompt()` 不掷骰子，想按频率来就用 `client.turn()`。
+`client.meme_prompt()` 不掷骰子，措辞也更谨慎，模型只在非常贴切时才用。想按频率来就用 `client.turn()`。
 
 ## 开发
 

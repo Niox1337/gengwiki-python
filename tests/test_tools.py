@@ -61,7 +61,7 @@ class ToolsTest(Base):
             return c, c.turn(text)
 
     def test_at_1_every_reply_may_and_the_lists_stay_in_the_guide(self):
-        c, turn = self.rolled(0.99)
+        c, turn = self.rolled(0.99, meme_frequency=1)
         self.assertEqual((turn.memes, turn.quotes, turn.stickers), (True, True, True))
         self.assertIn("<memes>", turn.prompt)
         self.assertNotIn("<stickers>", turn.prompt)
@@ -93,6 +93,20 @@ class ToolsTest(Base):
         self.assertNotIn("<stickers>", guide)
         self.assertNotIn("我家门前", guide)
         self.assertIn("列在用户消息的后面", guide)
+
+    def test_by_default_only_memes_are_rolled(self):
+        c = self.client()
+        self.assertEqual((c.meme_frequency, c.quote_frequency, c.sticker_frequency), (0.2, 1, 1))
+        with mock.patch("random.random", return_value=0.5):
+            turn = c.turn("你好")
+        self.assertEqual((turn.memes, turn.quotes, turn.stickers), (False, True, True))
+        self.assertIn("不要主动玩梗", turn.prompt)
+
+    def test_a_passed_roll_invites_a_meme_and_meme_prompt_stays_cautious(self):
+        c, turn = self.rolled(0.1)
+        self.assertIn("这条回复要用上一个梗", turn.prompt)
+        self.assertNotIn("宁可不用", turn.prompt)
+        self.assertIn("宁可不用", c.meme_prompt())
 
     def test_a_failed_roll_brings_no_list(self):
         _, turn = self.rolled(0.9, meme_frequency=0.5, quote_frequency=0.5, sticker_frequency=0.5)
