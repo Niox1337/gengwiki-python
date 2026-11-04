@@ -1,6 +1,6 @@
 [project]
 name = "gengwiki"
-version = "0.7.1"
+version = "0.8.0"
 description = "Python SDK for gengwiki, local first with the API as a fallback"
 readme = "README.md"
 requires-python = ">=3.10"

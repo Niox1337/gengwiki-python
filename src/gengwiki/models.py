@@ -136,6 +136,12 @@ class LexiconEntry(Model):
 
 
 @dataclass(frozen=True)
+class Tag(Model):
+    name: str = ""
+    count: int = 0
+
+
+@dataclass(frozen=True)
 class RateLimit(Model):
     per_minute: int | None = None
     per_day: int | None = None

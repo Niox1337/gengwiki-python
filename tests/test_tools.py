@@ -252,11 +252,11 @@ class ToolsTest(Base):
         self.assertEqual(c.tools.run({"content": "你好"}), [])
         self.assertEqual(c.tools.run(NS(content="你好", tool_calls=None)), [])
 
-    def test_a_conversation_costs_one_list_request(self):
+    def test_a_conversation_costs_the_list_and_the_hot_board(self):
         c = self.client()
         for q in ("躺平", "永远的神", "上班味"):
             c.tools.call("search_memes", {"q": q})
-        self.assertEqual(c.request_count, 1)
+        self.assertEqual(c.request_count, 2)
 
     def test_arguments_of_the_wrong_type_come_back_as_json(self):
         c = self.client()

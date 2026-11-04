@@ -73,6 +73,12 @@ class CliTest(Base):
         self.assertIn("躺平的正文", self.run_cli("meme", "摆烂")[1])
         self.assertIn("躺平的场景", self.run_cli("meme", "摆烂")[1])
         self.assertIn("tang-ping", self.run_cli("trending")[1])
+        self.assertIn("网络  2", self.run_cli("tags")[1])
+        self.assertIn("还没有订阅", self.run_cli("subscribe")[1])
+        self.assertIn("tang-ping", self.run_cli("subscribe", "网络")[1])
+        self.assertIn("网络", self.run_cli("subscribe")[1])
+        self.assertIn("已退订", self.run_cli("unsubscribe", "网络")[1])
+        self.assertIn("没有订阅", self.run_cli("unsubscribe", "网络")[1])
         self.assertIn("温柔姐姐", self.run_cli("personas", "姐姐")[1])
         self.assertIn("梗 2 个", self.run_cli("sync", "--images")[1])
 

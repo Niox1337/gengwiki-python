@@ -1,4 +1,4 @@
-"""Saved API keys and the login token, in one JSON file only this user can read."""
+"""Saved API keys, the login token and subscribed tags, in one JSON file only this user can read."""
 
 import contextlib
 import json

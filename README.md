@@ -45,6 +45,8 @@ gengwiki login                # 登录，密码不会保存
 gengwiki status               # 当前站点、Key、人设和额度
 gengwiki search 躺平           # 也有 meme、trending、personas
 gengwiki use 温柔姐姐           # 切换人设
+gengwiki tags                 # 全部标签
+gengwiki subscribe 游戏         # 订阅标签，也有 unsubscribe，不带标签时列出已订阅的
 gengwiki sync --images        # 下载全部内容供离线使用
 gengwiki keys                 # 也有 add、use、remove、secret、remote、rotate、revoke
 ```
@@ -75,6 +77,19 @@ system = f"{client.persona().prompt}\n\n{client.tools.guide()}"
 模型默认用 Markdown 图片发表情。如果你的程序能自己发图片，传入自己的规则，比如 `client.tools.guide("发送时调用 send_sticker，传入这条说明。")`。
 
 想让模型不等提问就玩梗，把 `client.meme_prompt(用户的话)` 放进提示词。它会优先带上这句话提到的梗，再随机补一些 Key 范围内的梗和热门梗，并告诉模型只在非常贴切时才用。`client.match_memes(用户的话)` 返回这句话提到了哪些梗，可以用来决定机器人要不要插话。两个方法都不调用模型，缓存好之后也不发请求。
+
+想让模型也用某个标签的热梗，就订阅这个标签。
+
+```python
+client.tags()                 # 全部标签，每个带 name 和 count，用得最多的在前
+client.subscribe("游戏")      # 返回这个标签的前 5 名，标签不存在时抛出 NotFoundError
+client.subscriptions()        # ["游戏"]
+client.unsubscribe("游戏")
+```
+
+订阅存在本机，所有 Key 共用，需要 `trending:read`。`client.turn()`、`client.meme_prompt()` 和 `client.match_memes()` 都会带上每个订阅标签的前 5 名，它们在随机选梗时有保留名额，已经绑定在 Key 上的梗不会重复出现。要按聊天分别订阅的话，自己保存标签，再传入 `tags=["游戏"]`，它会代替保存的订阅。
+
+`client.search_memes()` 只搜 Key 范围内的梗。`client.find_memes()` 还会搜订阅标签的前 5 名和热门榜，`search_memes` 工具和命令行的 `gengwiki search` 用的是它。Key 范围以外的梗只有释义和使用场景，完整解释和例句读不到。
 
 共有 7 个工具，分别是 `search_memes`、`get_meme`、`trending_memes`、`search_stickers`、`search_people`、`get_person` 和 `search_lexicon`。可以用 `client.tools.openai(["search_memes"])` 只选其中几个。
 

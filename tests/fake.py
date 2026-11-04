@@ -203,8 +203,17 @@ def serve(fake: Fake):
             if path.startswith("/memes/") and need("memes:read"):
                 m = next((m for m in scoped if m["slug"] == path[7:]), None)
                 return self.reply(200, m) if m else self.error_reply(404, "not_found")
+            if path == "/tags" and need("trending:read"):
+                counts = {}
+                for m in fake.memes.values():
+                    for c in m["categories"]:
+                        counts[c] = counts.get(c, 0) + 1
+                return self.reply(200, [{"name": c, "count": n} for c, n in sorted(counts.items(), key=lambda r: (-r[1], r[0]))])
             if path == "/trending" and need("trending:read"):
-                rows = sorted(fake.memes.values(), key=lambda m: -m["heat"])
+                tag = q.get("tag", "")
+                rows = sorted((m for m in fake.memes.values() if not tag or tag in m["categories"]), key=lambda m: -m["heat"])
+                if tag and "limit" not in q:
+                    limit = 5
                 return self.reply(200, [{f: m[f] for f in SUMMARY} for m in rows[:limit]])
             if path == "/persona" and need("persona:read"):
                 p = fake.personas.get(k["persona"])

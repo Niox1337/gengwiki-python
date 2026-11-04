@@ -8,7 +8,7 @@ import time
 import urllib.parse
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from . import _search
 from ._http import Http, check_url
@@ -24,7 +24,7 @@ from .errors import (
     UnavailableError,
 )
 from .keys import Keys
-from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, Person, RateLimit, Sticker, StickerPack, Turn
+from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, Person, RateLimit, Sticker, StickerPack, Tag, Turn
 from .tools import QUOTE_MODES, Tools
 
 log = logging.getLogger("gengwiki")
@@ -34,11 +34,15 @@ DEFAULT_SITE_URL = "https://gengwiki.niox.lol"
 
 # The API returns at most this many rows and has no paging. Fewer rows than this means the list is complete.
 LIST_MAX = 100
+# How much of a subscribed tag's board reaches the model.
+TAG_TOP = 5
 
 # Seconds. A key's scope is fixed when it is created, but what it points at can be edited or taken down at any time.
 # refresh() is there for whoever cannot wait this long.
 TTL_LIST = 6 * 3600
 TTL_TRENDING = 15 * 60
+# A tag may get its first meme at any time, so an empty board checks again, at most this often.
+TTL_EMPTY_BOARD = 60
 TTL_LEXICON = 3600
 TTL_MISSING = 3600
 # A persona may have been published since the catalog was read, so a miss checks again, at most this often.
@@ -229,9 +233,28 @@ class GengWiki:
         if len(rows) < LIST_MAX or not q.strip():
             return [MemeSummary.of(r) for r in _search.search_memes(q, rows, limit)]
         # The list is cut off, so only the server can search the rest.
+        return [MemeSummary.of(r) for r in self._server_search(q.strip())[:limit]]
+
+    def _server_search(self, q: str) -> list[dict]:
+        return self._v1(f"search:{q.lower()}", "/memes/search", TTL_LIST, params={"q": q, "limit": LIST_MAX})
+
+    def find_memes(self, q: str = "", limit: int = 20, *, tags: Iterable[str] | None = None) -> list[MemeSummary]:
+        """Search every meme a bot may bring up, this key's, the subscribed tags and the hot board, best match first.
+
+        Only this key's have the text meme() returns. tags replaces the saved subscriptions, for a host that keeps its own per chat.
+        """
+        limit = max(1, min(limit, LIST_MAX))
+        rows = {r["slug"]: r for r in self._pool(tags)}
+        if not rows:
+            return self.search_memes(q, limit)  # says so if this key may read none of it
         q = q.strip()
-        rows = self._v1(f"search:{q.lower()}", "/memes/search", TTL_LIST, params={"q": q, "limit": LIST_MAX})
-        return [MemeSummary.of(r) for r in rows[:limit]]
+        try:
+            if q and len(self._list()) >= LIST_MAX:
+                # The list is cut off, so only the server can search the rest of this key's.
+                rows |= {r["slug"]: r for r in self._server_search(q)}
+        except ForbiddenError:
+            pass
+        return [MemeSummary.of(r) for r in _search.search_memes(q, list(rows.values()), limit)]
 
     def meme(self, slug: str) -> Meme:
         """One meme with its full text. Takes a slug, or an exact title or alias."""
@@ -255,18 +278,67 @@ class GengWiki:
         current = lambda m: m.get("updated_at") == updated_at
         return Meme.of(self._v1(f"meme:{row['slug']}", path, 0, shared=True, valid=current, expect=dict))
 
-    def trending(self, tag: str = "", limit: int = 20) -> list[MemeSummary]:
-        """The hot board, site-wide or for one tag. Not limited by the key's scope, so all keys share one copy."""
+    def trending(self, tag: str = "", limit: int | None = None) -> list[MemeSummary]:
+        """The hot board, 20 rows site-wide or a tag's top 5 unless limit says otherwise. Not limited by the key's scope, so all keys share one copy."""
+        if limit is None:
+            limit = TAG_TOP if tag else 20
         return [MemeSummary.of(r) for r in self._board(tag)[: max(1, min(limit, LIST_MAX))]]
 
     def _board(self, tag: str = "") -> list[dict]:
         # Always the full board, so a different limit later is not another request.
-        return self._v1(f"trending:{tag}", "/trending", TTL_TRENDING, shared=True, params={"tag": tag, "limit": LIST_MAX})
+        read = lambda ttl: self._v1(f"trending:{tag}", "/trending", ttl, shared=True, params={"tag": tag, "limit": LIST_MAX})
+        return read(TTL_TRENDING) or read(TTL_EMPTY_BOARD)
 
-    def _pool(self) -> list[dict]:
-        """Every meme a bot may bring up, this key's own first and then the hot board. A key without one of the scopes just has fewer."""
+    def _extra_board(self, tag: str = "") -> list[dict]:
+        """A board that only adds to what a reply can use, so an outage on one never read must not cost the memes that are cached."""
+        try:
+            return self._board(tag)
+        except UnavailableError as e:
+            log.warning("skipping the board %r: %s", tag, e)
+            return []
+
+    def tags(self) -> list[Tag]:
+        """Every tag with how many memes carry it, the most used first. Not limited by the key's scope, so all keys share one copy."""
+        return [Tag.of(r) for r in self._v1("tags", "/tags", TTL_TRENDING, shared=True)]
+
+    def subscriptions(self) -> list[str]:
+        """The tags whose top memes the model may also use, saved on this machine for every key."""
+        return self._keyring.read().get("subscriptions", [])
+
+    def subscribe(self, tag: str) -> list[MemeSummary]:
+        """Let the model also use this tag's top memes, and return them. An unknown tag raises NotFoundError and is not saved."""
+        tag = tag.strip()
+        top = self.trending(tag) if tag else []
+        if not top:
+            raise NotFoundError(f"no meme has the tag {tag!r}", 404, "not_found")
+        with self._keyring.edit() as data:
+            saved = data.setdefault("subscriptions", [])
+            if tag not in saved:
+                saved.append(tag)
+        return top
+
+    def unsubscribe(self, tag: str) -> bool:
+        """False if the tag was not subscribed."""
+        tag = tag.strip()
+        with self._keyring.edit() as data:
+            saved = data.setdefault("subscriptions", [])
+            if tag not in saved:
+                return False
+            saved.remove(tag)
+        return True
+
+    def _tag_tops(self, tags: Iterable[str] | None) -> list[dict]:
+        """The top of each tag's board, by default the subscribed ones. Fetches each board once, shared by all keys."""
         rows: dict[str, dict] = {}
-        for read in (self._list, self._board):
+        for tag in self.subscriptions() if tags is None else tags:
+            for r in self._extra_board(tag)[:TAG_TOP]:
+                rows.setdefault(r["slug"], r)
+        return list(rows.values())
+
+    def _pool(self, tags: Iterable[str] | None = None) -> list[dict]:
+        """Every meme a bot may bring up, each once. This key's own first, then the subscribed tags, then the hot board. A key without one of the scopes just has fewer."""
+        rows: dict[str, dict] = {}
+        for read in (self._list, lambda: self._tag_tops(tags), self._extra_board):
             try:
                 for r in read():
                     rows.setdefault(r["slug"], r)
@@ -274,23 +346,39 @@ class GengWiki:
                 pass
         return list(rows.values())
 
-    def match_memes(self, text: str, limit: int = 3) -> list[MemeSummary]:
-        """The memes named in a chat message, from this key's memes and the hot board. Takes no request once both are cached."""
-        return [MemeSummary.of(r) for r in _search.match_memes(text, self._pool(), max(1, limit))]
+    def match_memes(self, text: str, limit: int = 3, *, tags: Iterable[str] | None = None) -> list[MemeSummary]:
+        """The memes named in a chat message, from this key's memes, the subscribed tags and the hot board. Takes no request once all are cached.
 
-    def meme_prompt(self, text: str = "", limit: int = 15) -> str:
+        tags replaces the saved subscriptions, for a host that keeps its own per chat.
+        """
+        return [MemeSummary.of(r) for r in _search.match_memes(text, self._pool(tags), max(1, limit))]
+
+    def meme_prompt(self, text: str = "", limit: int = 15, *, tags: Iterable[str] | None = None) -> str:
         """A block for the model's prompt that lets it use a meme unasked, only where one really fits. Empty if this key can see none. Rolls nothing, turn() does.
 
         The memes named in text come first. The rest are a random pick, so a long list still gets used in turn.
+        tags replaces the saved subscriptions, for a host that keeps its own per chat.
         """
-        return self._meme_block(text, limit, _MEME_RULE)
+        return self._meme_block(text, limit, _MEME_RULE, tags)
 
-    def _meme_block(self, text: str, limit: int, rule: str) -> str:
+    def _meme_block(self, text: str, limit: int, rule: str, tags: Iterable[str] | None = None) -> str:
         # ponytail: the model does the matching on meaning, it only sees limit memes. Embeddings if a big list needs better picks.
-        pool = self._pool()
-        named = _search.match_memes(text, pool, limit)
-        rest = [r for r in pool if r not in named]
-        picked = named + random.sample(rest, min(limit - len(named), len(rest)))
+        tags = None if tags is None else list(tags)  # read twice below
+        pool = self._pool(tags)
+        picked = _search.match_memes(text, pool, limit)
+
+        def unpicked(rows: list[dict]) -> list[dict]:
+            seen = {r["slug"] for r in picked}
+            return [r for r in rows if r["slug"] not in seen]
+
+        # Half of the free places, or a subscribed tag would drown in the hot board.
+        try:
+            tops = unpicked(self._tag_tops(tags))
+        except ForbiddenError:
+            tops = []
+        picked += random.sample(tops, min((limit - len(picked) + 1) // 2, len(tops)))
+        rest = unpicked(pool)
+        picked += random.sample(rest, min(limit - len(picked), len(rest)))
         if not picked:
             return ""
         lines = "\n".join(_prompt_line(r) for r in picked)
@@ -300,17 +388,18 @@ class GengWiki:
             f"<memes>\n{lines}\n</memes>"
         )
 
-    def turn(self, text: str = "", *, memes: bool | None = None) -> Turn:
+    def turn(self, text: str = "", *, memes: bool | None = None, tags: Iterable[str] | None = None) -> Turn:
         """Rolls the three frequencies for one reply, so code decides whether the model may and the model decides whether it fits.
 
         Put prompt after the user's message. Asking for a sticker or a quote by name passes its roll unless the frequency is 0.
         memes forces that roll, for a host that has already decided to speak up with a meme. Takes no request once all is cached.
+        tags replaces the saved subscriptions, for a host that keeps its own per chat.
         """
         use_memes = random.random() < self.meme_frequency if memes is None else memes
         use_quotes = self.quotes != "off" and (random.random() < self.quote_frequency or (self.quote_frequency > 0 and "语录" in text))
         use_stickers = random.random() < self.sticker_frequency or (self.sticker_frequency > 0 and "表情" in text)
         parts = [
-            self._meme_block(text, 15, _MEME_RULE_ROLLED) if use_memes else "这条回复不要主动玩梗。",
+            self._meme_block(text, 15, _MEME_RULE_ROLLED, tags) if use_memes else "这条回复不要主动玩梗。",
             self.tools._quote_turn(use_quotes),
             self.tools._sticker_turn(use_stickers),
         ]
@@ -522,6 +611,8 @@ class GengWiki:
                 summary["memes"] += 1
         allowed(self.persona)
         allowed(self.trending)
+        allowed(lambda: self._tag_tops(None))
+        allowed(self.tags)
         for pack in allowed(self.sticker_packs, []):
             for sticker in pack.stickers:
                 summary["stickers"] += 1

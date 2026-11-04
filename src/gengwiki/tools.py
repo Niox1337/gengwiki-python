@@ -4,7 +4,8 @@ import json
 import random
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
-from .errors import ForbiddenError, GengWikiError
+from .errors import ForbiddenError, GengWikiError, NotFoundError
+from .models import MemeSummary
 
 if TYPE_CHECKING:
     from .client import GengWiki
@@ -165,8 +166,16 @@ def _person_lines(p: dict, quotes: bool) -> str:
 
 
 def _handlers(c: "GengWiki") -> dict[str, Callable[..., Any]]:
-    def get_meme(slug: str) -> dict:
-        m = c.meme(slug)
+    def get_meme(slug: str, tags: list[str] | None = None) -> dict:
+        try:
+            m = c.meme(slug)
+        except NotFoundError:
+            # search_memes also finds what this key may not read in full, the summary is all there is of those.
+            wanted = slug.strip().lower()
+            row = next((r for r in c._pool(tags) if r["slug"] == slug or wanted in (s.lower() for s in [r["title"], *r["aliases"]])), None)
+            if row is None:
+                raise
+            return {**_summary(MemeSummary.of(row)), "note": "这个梗只能查到释义和使用场景，没有完整解释和例句"}
         return {
             **_summary(m),
             "body": m.body,
@@ -174,8 +183,8 @@ def _handlers(c: "GengWiki") -> dict[str, Callable[..., Any]]:
             "related": [{"slug": r.slug, "title": r.title} for r in m.related],
         }
 
-    def search_memes(q: str, limit: int = 5) -> list[dict]:
-        return [_summary(m) for m in c.search_memes(q, int(limit))]
+    def search_memes(q: str, limit: int = 5, tags: list[str] | None = None) -> list[dict]:
+        return [_summary(m) for m in c.find_memes(q, int(limit), tags=tags)]
 
     def trending_memes(tag: str = "", limit: int = 10) -> list[dict]:
         return [_summary(m) for m in c.trending(tag, int(limit))]

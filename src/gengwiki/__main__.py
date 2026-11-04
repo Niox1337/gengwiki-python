@@ -93,11 +93,29 @@ def _use(c: GengWiki, a) -> None:
 
 
 def _search(c: GengWiki, a) -> None:
-    _memes(c.search_memes(a.q))
+    _memes(c.find_memes(a.q))
 
 
 def _trending(c: GengWiki, a) -> None:
     _memes(c.trending(a.tag))
+
+
+def _tags(c: GengWiki, a) -> None:
+    for t in c.tags():
+        print(f"{t.name}  {t.count}")
+
+
+def _subscribe(c: GengWiki, a) -> None:
+    if not a.tag:
+        print("、".join(c.subscriptions()) or "还没有订阅标签")
+        return
+    rows = c.subscribe(a.tag)
+    print(f"已订阅 {a.tag}")
+    _memes(rows)
+
+
+def _unsubscribe(c: GengWiki, a) -> None:
+    print(f"已退订 {a.tag}" if c.unsubscribe(a.tag) else f"没有订阅 {a.tag}")
 
 
 def _meme(c: GengWiki, a) -> None:
@@ -137,6 +155,9 @@ def _parser() -> argparse.ArgumentParser:
     command(sub, "search", _search, "搜索梗", ("q", optional))
     command(sub, "meme", _meme, "查看一个梗", ("slug", {}))
     command(sub, "trending", _trending, "热门榜", ("tag", optional))
+    command(sub, "tags", _tags, "全部标签")
+    command(sub, "subscribe", _subscribe, "订阅标签，不带标签时列出已订阅的", ("tag", optional))
+    command(sub, "unsubscribe", _unsubscribe, "退订标签", ("tag", {}))
     command(sub, "personas", _personas, "浏览人设", ("q", optional))
     command(sub, "use", _use, "切换人设", ("persona", {}))
     command(sub, "sync", _sync, "下载全部内容供离线使用", ("--images", {"action": "store_true"}))
