@@ -74,7 +74,7 @@ system = f"{client.persona().prompt}\n\n{client.tools.guide()}"
 
 模型默认用 Markdown 图片发表情。如果你的程序能自己发图片，传入自己的规则，比如 `client.tools.guide("发送时调用 send_sticker，传入这条说明。")`。
 
-想让模型不等提问就玩梗，把 `client.meme_prompt(用户的话)` 放进提示词。它会优先带上这句话提到的梗，再随机补一些 Key 范围内的梗和热门梗，并告诉模型什么时候可以用，默认只在非常贴切时才用。`client.match_memes(用户的话)` 返回这句话提到了哪些梗，可以用来决定机器人要不要插话。两个方法都不调用模型，缓存好之后也不发请求。
+想让模型不等提问就玩梗，把 `client.meme_prompt(用户的话)` 放进提示词。它会优先带上这句话提到的梗，再随机补一些 Key 范围内的梗和热门梗，并告诉模型只在非常贴切时才用。`client.match_memes(用户的话)` 返回这句话提到了哪些梗，可以用来决定机器人要不要插话。两个方法都不调用模型，缓存好之后也不发请求。
 
 共有 7 个工具，分别是 `search_memes`、`get_meme`、`trending_memes`、`search_stickers`、`search_people`、`get_person` 和 `search_lexicon`。可以用 `client.tools.openai(["search_memes"])` 只选其中几个。
 
@@ -103,19 +103,31 @@ client = GengWiki(quotes="both")
 
 ## 频率
 
-三个参数决定模型多主动地玩梗、用语录和发表情，它们只改变提示词里的指令。这是对模型的要求，不是精确的比例，实际多少还要看模型。
+三个 0 到 1 的参数决定多少比例的回复可以主动玩梗、用语录和发表情。每条回复由代码掷一次，掷中了才把素材给模型，模型再按语境决定用不用、用哪个，所以实际比例不会超过这个数。
 
 ```python
-client = GengWiki(meme_frequency="medium", quote_frequency="high", sticker_frequency="low")
+client = GengWiki(meme_frequency=0.3, quote_frequency=0.2, sticker_frequency=0.5)
+
+system = client.tools.guide()      # 放进系统提示词，不随回复变化
+turn = client.turn(用户的话)         # 每条回复调用一次，不调用模型
+messages = [
+    {"role": "system", "content": system},
+    {"role": "user", "content": f"{用户的话}\n\n{turn.prompt}"},
+]
 ```
 
-| 参数 | 默认值 | 写在 | 说明 |
-|---|---|---|---|
-| `meme_frequency` | `low` | `meme_prompt()` | 可选 `off`、`low`、`medium`、`high`。`off` 时返回空字符串，模型被问到时仍然可以查梗 |
-| `quote_frequency` | `low` | `tools.guide()` | 可选 `low`、`medium`、`high`。Key 没有关联带语录的人物，或者 `quotes="off"` 时无效。想完全不用语录，设置 `quotes="off"` |
-| `sticker_frequency` | `persona` | `tools.guide()` | 可选 `off`、`persona`、`low`、`medium`、`high`。`persona` 听人设的，其他值优先于人设。`off` 时不列出表情，省下这部分 token，`search_stickers` 工具也不再返回结果 |
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `meme_frequency` | 1 | 掷中时 `turn.prompt` 带上一批梗，模型被问到时仍然可以查梗 |
+| `quote_frequency` | 1 | 掷中时带上语录。Key 没有关联带语录的人物，或者 `quotes="off"` 时无效 |
+| `sticker_frequency` | 1 | 掷中时带上表情说明 |
 
-`low` 只在非常贴切时才用，`medium` 沾边就可以用，`high` 说得通就用，认真求助或倾诉时除外。直接调用 `client.search_stickers()` 不受频率影响。
+- 没掷中时不带素材，`turn.prompt` 里会写明这条回复不要主动用。`turn.memes`、`turn.quotes` 和 `turn.stickers` 是这次掷的结果，可以用来拿掉工具，比如没掷中时不给模型 `search_stickers`。
+- 用户的话里提到“表情”或“语录”时算掷中，只有频率为 0 时例外。
+- 频率为 0 时不带素材，`search_stickers` 工具也不再返回结果。直接调用 `client.search_stickers()` 不受频率影响。
+- 频率为 1 时，表情说明和语录留在 `guide()` 里，方便模型服务的提示词缓存，这也是一直以来的行为。频率在 0 和 1 之间时，它们只在掷中的回复里出现，所以只调用 `guide()` 不调用 `turn()` 的话，模型拿不到它们。
+
+`client.meme_prompt()` 不掷骰子，想按频率来就用 `client.turn()`。
 
 ## 开发
 

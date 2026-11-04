@@ -17,6 +17,16 @@ class Model:
 
 
 @dataclass(frozen=True)
+class Turn(Model):
+    """One reply's rolls, what the model may do unasked, and the text that tells it so."""
+
+    prompt: str = ""
+    memes: bool = False
+    quotes: bool = False
+    stickers: bool = False
+
+
+@dataclass(frozen=True)
 class MemeSummary(Model):
     slug: str = ""
     title: str = ""

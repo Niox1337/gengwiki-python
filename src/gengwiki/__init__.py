@@ -1,4 +1,4 @@
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 from .client import GengWiki  # noqa: E402
 from .errors import (  # noqa: E402
@@ -27,6 +27,7 @@ from .models import (  # noqa: E402
     RateLimit,
     Sticker,
     StickerPack,
+    Turn,
 )
 
 __all__ = [
@@ -53,5 +54,6 @@ __all__ = [
     "ServerError",
     "Sticker",
     "StickerPack",
+    "Turn",
     "UnavailableError",
 ]
