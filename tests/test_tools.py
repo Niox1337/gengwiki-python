@@ -53,6 +53,47 @@ class ToolsTest(Base):
         self.assertNotIn("quotes", json.loads(off.call("search_people", {"q": "鲁迅"}))[0])
         self.assertNotIn("quotes", json.loads(off.call("get_person", {"name": "鲁迅"})))
 
+    def test_quote_frequency_changes_the_rule(self):
+        self.assertIn("只有非常贴切时才用语录", self.client().tools.guide())
+        self.assertIn("和内容沾边就可以用一句语录", self.client(quote_frequency="medium").tools.guide())
+        self.assertIn("尽量找机会用上一句语录", self.client(quote_frequency="high").tools.guide())
+
+    def test_quote_frequency_does_nothing_with_quotes_off(self):
+        guide = self.client(quotes="off", quote_frequency="high").tools.guide()
+        self.assertIn("不要引用", guide)
+        self.assertNotIn("尽量找机会", guide)
+
+    def test_quote_frequency_does_nothing_without_linked_quotes(self):
+        self.fake.people[LU_XUN]["quotes"] = []
+        guide = self.client(quote_frequency="high").tools.guide()
+        self.assertNotIn("尽量找机会", guide)
+        self.assertIn("只有非常贴切时才用语录", guide)
+
+    def test_sticker_frequency_follows_the_persona_until_it_is_set(self):
+        guide = self.client().tools.guide()
+        self.assertIn("发表情的多少都听人设的", guide)
+        self.assertIn("人设没有提到表情时", guide)
+        guide = self.client(sticker_frequency="high").tools.guide()
+        self.assertIn("发表情的多少以这里为准", guide)
+        self.assertNotIn("发表情的多少都听人设的", guide)
+        self.assertIn("尽量多发表情", guide)
+        self.assertIn("<stickers>", guide)
+
+    def test_sticker_frequency_off_lists_and_returns_none(self):
+        c = self.client(sticker_frequency="off")
+        guide = c.tools.guide()
+        self.assertIn("不要发表情", guide)
+        self.assertNotIn("<stickers>", guide)
+        self.assertEqual(self.fake.count("/v1/sticker-packs"), 0)
+        self.assertEqual(json.loads(c.tools.call("search_stickers", {"q": "震惊"})), [])
+
+    def test_unknown_frequencies_are_refused(self):
+        for option in ("meme_frequency", "quote_frequency", "sticker_frequency"):
+            with self.assertRaisesRegex(ValueError, option):
+                self.client(**{option: "sometimes"})
+        with self.assertRaises(ValueError):
+            self.client(quote_frequency="off")
+
     def test_unknown_quote_mode_is_refused(self):
         with self.assertRaises(ValueError):
             self.client(quotes="sometimes")

@@ -42,6 +42,15 @@ class MemeTest(Base):
         c.refresh()
         self.assertEqual(c.meme_prompt(), "")
 
+    def test_meme_frequency_changes_the_rule_and_off_needs_no_request(self):
+        rules = {f: self.client(meme_frequency=f).meme_prompt().split("<memes>")[0] for f in ("low", "medium", "high")}
+        self.assertEqual(len(set(rules.values())), 3)
+        self.assertIn("非常贴切", rules["low"])
+        self.assertEqual(self.client().meme_frequency, "low")
+        off = self.client(meme_frequency="off")
+        self.assertEqual(off.meme_prompt("躺平"), "")
+        self.assertEqual(off.request_count, 0)
+
     def test_many_searches_cost_one_request(self):
         c = self.client()
         self.assertEqual([m.slug for m in c.search_memes("躺平")], ["tang-ping"])
