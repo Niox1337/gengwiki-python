@@ -35,14 +35,12 @@ DEFAULT_SITE_URL = "https://gengwiki.niox.lol"
 # The API returns at most this many rows and has no paging. Fewer rows than this means the list is complete.
 LIST_MAX = 100
 
-# Seconds. A key's scope is fixed when it is created, so its list only changes when a meme is edited or hidden.
+# Seconds. A key's scope is fixed when it is created, but what it points at can be edited or taken down at any time.
+# refresh() is there for whoever cannot wait this long.
 TTL_LIST = 6 * 3600
 TTL_TRENDING = 15 * 60
 TTL_LEXICON = 3600
 TTL_MISSING = 3600
-# Personas have no edit route, only publish and unpublish.
-TTL_PERSONA = 7 * 86400
-TTL_CATALOG = 86400
 # A persona may have been published since the catalog was read, so a miss checks again, at most this often.
 TTL_CATALOG_MISS = 60
 # The persona catalog returns at most this many rows, backend/src/personas.rs.
@@ -133,10 +131,21 @@ class GengWiki:
     def _ns(self) -> str:
         return namespace(self._key)
 
+    @property
+    def stale(self) -> bool:
+        """True while a failed refresh has this client serving old copies."""
+        now = time.time()
+        return any(now < until for until in self._paused.values())
+
     def refresh(self) -> None:
-        """Make the next read of everything go to the network. The old data stays as a fallback."""
+        """Make the next read of everything go to the network, for every saved key too. The old data stays as a fallback.
+
+        A meme's text is only read again if the list says it changed, and sticker images never change.
+        """
         self._store.expire(self._ns)
         self._store.expire(_SHARED)
+        for saved in self._keyring.read()["keys"].values():
+            self._store.expire(namespace(saved["key"]))
         self._paused.clear()
 
     def _cached(
@@ -149,7 +158,6 @@ class GengWiki:
         token: str | None,
         params: dict | None = None,
         valid: Callable[[Any], bool] | None = None,
-        missing_ttl: float = TTL_MISSING,
         expect: type = list,
     ) -> Any:
         """Return the local copy if it is good, otherwise fetch it. An outage serves the old copy instead of failing."""
@@ -158,7 +166,7 @@ class GengWiki:
             if hit is None:
                 return False
             if hit.value == _MISSING:
-                return hit.age < missing_ttl
+                return hit.age < TTL_MISSING
             return valid(hit.value) if valid else hit.age < ttl
 
         def answer(hit: Hit) -> Any:
@@ -311,7 +319,7 @@ class GengWiki:
     # ---------- persona ----------
 
     def _persona_row(self, key: str) -> dict:
-        return self._cached(namespace(key), "persona", f"{self.base_url}/v1/persona", TTL_PERSONA, token=key, missing_ttl=TTL_CATALOG, expect=dict)
+        return self._cached(namespace(key), "persona", f"{self.base_url}/v1/persona", TTL_LIST, token=key, expect=dict)
 
     def persona(self) -> Persona | None:
         """The persona bound to the current key, or None if it has none."""
@@ -346,7 +354,7 @@ class GengWiki:
         """Published personas to pick from. Where the site hides the catalog, the ones the saved keys are bound to."""
         q = q.strip()
         try:
-            found = _search.search_personas(q, self._catalog(q, TTL_CATALOG))
+            found = _search.search_personas(q, self._catalog(q, TTL_LIST))
             if not found:
                 found = _search.search_personas(q, self._catalog(q, TTL_CATALOG_MISS))
         except NotFoundError:
@@ -370,7 +378,7 @@ class GengWiki:
             return next((r for r in rows if wanted == r["id"] or wanted.casefold() == r["title"].casefold()), None)
 
         try:
-            row = find(TTL_CATALOG) or find(TTL_CATALOG_MISS)
+            row = find(TTL_LIST) or find(TTL_CATALOG_MISS)
         except NotFoundError as e:
             raise AccountApiUnavailable(f"{self.site_url} does not expose the persona catalog") from e
         if row is None:
@@ -426,7 +434,7 @@ class GengWiki:
     def _all_people(self) -> list[dict]:
         rows: list[dict] = []
         while True:
-            page = self._v1(f"people:{len(rows)}", "/people", TTL_CATALOG, shared=True, params={"limit": LIST_MAX, "offset": len(rows)})
+            page = self._v1(f"people:{len(rows)}", "/people", TTL_LIST, shared=True, params={"limit": LIST_MAX, "offset": len(rows)})
             rows += page
             if len(page) < LIST_MAX:
                 return rows

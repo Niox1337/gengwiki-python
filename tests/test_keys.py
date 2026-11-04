@@ -102,6 +102,22 @@ class SwitchPersonaTest(Base):
             c.search_memes("yyds")
         self.assertEqual(c.request_count, before)
 
+    def test_refresh_covers_every_saved_key(self):
+        c = self.saved()
+        c.use_persona("温柔姐姐")
+        c.use_persona("毒舌老哥")
+        self.fake.personas[PERSONA_B]["prompt"] = "改过了"
+        c.refresh()
+        self.assertEqual(c.use_persona("温柔姐姐").prompt, "改过了")
+
+    def test_renamed_persona_is_still_found_on_the_saved_key(self):
+        c = self.saved()
+        c.use_persona("温柔姐姐")
+        self.fake.personas[PERSONA_B]["title"] = "新名字"
+        c.refresh()
+        self.assertEqual(c.use_persona("新名字").id, PERSONA_B)
+        self.assertEqual(len(c.keys.local()), 2)
+
     def test_choice_survives_a_restart(self):
         self.saved().use_persona("温柔姐姐")
         c = self.client(key=None)

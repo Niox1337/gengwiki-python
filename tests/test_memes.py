@@ -127,6 +127,12 @@ class MemeTest(Base):
             self.assertEqual(c.search_memes("躺平")[0].slug, "tang-ping")
             self.assertEqual(c.request_count, before + 1)
             self.assertLess(time.monotonic() - started, 0.4)
+            self.assertTrue(c.stale)
+        self.fake.status = None
+        c.refresh()
+        self.assertFalse(c.stale)
+        c.search_memes()
+        self.assertFalse(c.stale)
 
     def test_outage_without_a_copy_raises(self):
         self.fake.status = 500

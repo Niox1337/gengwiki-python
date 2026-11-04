@@ -85,14 +85,14 @@ class Keys:
         try:
             row = self._c._persona_row(key)
         except (NotFoundError, ForbiddenError):
-            row = None  # a key's persona and scopes are fixed at creation, so this answer lasts
+            row = None  # no persona, no scope, or the persona is not published right now
         with self._ring.edit() as data:
             data["keys"][name]["persona_id"] = row["id"] if row else None
             data["keys"][name]["persona_title"] = row["title"] if row else None
         return row
 
     def _name_for_persona(self, wanted: str) -> str | None:
-        """The saved key bound to this persona. Only asks the server about keys it has never seen."""
+        """The saved key bound to this persona. What the keyring remembers first, a persona can be renamed so a miss asks the server."""
         keys = self._ring.read()["keys"]
 
         def matches(pid: str | None, title: str | None) -> bool:
@@ -101,9 +101,7 @@ class Keys:
         for name, e in keys.items():
             if matches(e.get("persona_id"), e.get("persona_title")):
                 return name
-        for name, e in keys.items():
-            if "persona_id" in e:
-                continue
+        for name in keys:
             try:
                 row = self.persona_row(name)
             except GengWikiError:

@@ -15,5 +15,8 @@ print(client.persona())
 client.refresh()
 print(client.search_memes("躺平"))
 
+# True 表示暂时连不上，读到的还是旧内容
+print(client.stale)
+
 # 这个客户端实际发出的请求数
 print(client.request_count)
