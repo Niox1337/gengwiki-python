@@ -1,11 +1,14 @@
 import gzip
 import http.server
 import json
+import os
 import threading
 import unittest
+from unittest import mock
 
+from gengwiki import _http
 from gengwiki._http import Http, check_url
-from gengwiki.errors import AuthError, GengWikiError, NetworkError, RateLimitError, ServerError
+from gengwiki.errors import AuthError, BadResponseError, GengWikiError, NetworkError, RateLimitError, ServerError
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -116,6 +119,99 @@ class HttpTest(unittest.TestCase):
         for path in ("/cut", "/badgzip"):
             with self.assertRaises(NetworkError, msg=path):
                 self.http.json("GET", f"{self.base}{path}")
+
+    def test_a_proxy_from_the_environment_is_still_used(self):
+        env = {"HTTP_PROXY": self.base, "http_proxy": self.base, "NO_PROXY": "", "no_proxy": ""}
+        with mock.patch.dict(os.environ, env):
+            proxied = Http(timeout=2)
+            self.assertEqual(proxied.json("GET", "http://gengwiki.invalid/x"), {"ok": True})
+        self.assertEqual(Handler.seen[0][0], "http://gengwiki.invalid/x")
+
+    def test_rows_must_have_the_fields_the_sdk_reads(self):
+        shape = [{"slug": str, "stickers": [{"id": str}]}]
+        self.assertTrue(_http._fits([], shape))
+        self.assertTrue(_http._fits([{"slug": "a", "stickers": [{"id": "b", "new": 1}], "new": 1}], shape))
+        for bad in ({}, ["a"], [{}], [{"slug": None, "stickers": []}], [{"slug": "a", "stickers": [{}]}]):
+            self.assertFalse(_http._fits(bad, shape), bad)
+        with self.assertRaises(BadResponseError):
+            self.http.json("GET", self.base + "/ok", expect={"missing": str})
+
+
+class KeepAliveHandler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    connections = 0
+    seen: list = []
+
+    def log_message(self, *args):
+        pass
+
+    def setup(self):
+        KeepAliveHandler.connections += 1
+        super().setup()
+
+    def _answer(self):
+        KeepAliveHandler.seen.append((self.command, self.path))
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self.send_response(200)
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"{}")
+        # Goes away without saying so, as a server does with a connection left idle too long.
+        self.close_connection = self.path == "/drop"
+
+    do_GET = do_POST = _answer
+
+
+class KeepAliveTest(unittest.TestCase):
+    def setUp(self):
+        KeepAliveHandler.connections = 0
+        KeepAliveHandler.seen = []
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), KeepAliveHandler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+        self.http = Http(timeout=2)
+        self.addCleanup(self.http.close)
+
+    def test_requests_share_one_connection(self):
+        for _ in range(3):
+            self.http.json("GET", self.base + "/a")
+        self.assertEqual(KeepAliveHandler.connections, 1)
+        self.assertEqual(self.http.count, 3)
+
+    def test_a_connection_the_server_dropped_costs_nothing(self):
+        self.http.json("GET", self.base + "/drop")
+        self.assertEqual(self.http.json("GET", self.base + "/a"), {})
+        self.assertEqual(KeepAliveHandler.connections, 2)
+        self.assertEqual(self.http.count, 2)
+
+    def test_a_write_never_goes_out_on_an_old_connection(self):
+        self.http.json("GET", self.base + "/drop")
+        self.http.json("POST", self.base + "/write", body={})
+        self.assertEqual(KeepAliveHandler.seen.count(("POST", "/write")), 1)
+        self.assertEqual(KeepAliveHandler.connections, 2)
+
+    def test_a_connection_idle_too_long_is_not_trusted(self):
+        self.http.json("GET", self.base + "/a")
+        with mock.patch.object(_http, "_IDLE_MAX", 0):
+            self.http.json("GET", self.base + "/a")
+        self.assertEqual(KeepAliveHandler.connections, 2)
+
+    def test_threads_do_not_share_a_connection_at_once(self):
+        results = []
+
+        def work():
+            for _ in range(10):
+                results.append(self.http.json("GET", self.base + "/a"))
+
+        threads = [threading.Thread(target=work) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(results, [{}] * 80)
+        self.assertEqual(self.http.count, 80)
 
 
 if __name__ == "__main__":

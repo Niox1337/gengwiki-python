@@ -56,6 +56,17 @@ _SHARED = "shared"  # data that is the same for every key
 _MISSING = {"__missing__": True}
 _IMAGE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
+# What the SDK reads from each answer without a default, checked before an answer reaches the cache. All of it is non-null on the server.
+_MEME_ROW = {"slug": str, "title": str, "aliases": list, "summary": str, "heat": int, "updated_at": str}
+_MEME = {"slug": str, "title": str, "updated_at": str}
+_TAG = {"name": str}
+_PERSONA = {"id": str, "title": str}
+_CATALOG_ROW = {"id": str, "title": str, "memes": list, "packs": list}
+_PACK = {"id": str, "title": str, "tags": list, "stickers": [{"id": str, "caption": str}]}
+_PERSON = {"name": str, "aliases": list, "tags": list, "bio": str, "quotes": list}
+_LEXICON = {"id": str, "entries": int}
+_ENTRY = {"term": str, "aliases": list, "note": str, "tags": list}
+
 
 _MEME_RULE = "回复不需要用梗。只有某个梗和当前内容非常贴切时才用它，不贴切就正常回复，宁可不用也不要硬凑。"
 # The roll has already said yes, so the model only has to pick. Softer wording stayed under 10% against DeepSeek, this reaches about half, some of it forced.
@@ -119,6 +130,7 @@ class GengWiki:
 
     def close(self) -> None:
         self._store.close()
+        self._http.close()
 
     def __enter__(self):
         return self
@@ -162,7 +174,7 @@ class GengWiki:
         token: str | None,
         params: dict | None = None,
         valid: Callable[[Any], bool] | None = None,
-        expect: type = list,
+        expect: Any,
     ) -> Any:
         """Return the local copy if it is good, otherwise fetch it. An outage serves the old copy instead of failing."""
 
@@ -224,7 +236,7 @@ class GengWiki:
 
     def _list(self) -> list[dict]:
         """Everything this key can see, up to LIST_MAX. Searches and detail lookups all lean on this one request."""
-        return self._v1("list", "/memes/search", TTL_LIST, params={"q": "", "limit": LIST_MAX})
+        return self._v1("list", "/memes/search", TTL_LIST, params={"q": "", "limit": LIST_MAX}, expect=[_MEME_ROW])
 
     def search_memes(self, q: str = "", limit: int = 20) -> list[MemeSummary]:
         """Search this key's memes. An empty q lists them by heat."""
@@ -236,7 +248,7 @@ class GengWiki:
         return [MemeSummary.of(r) for r in self._server_search(q.strip())[:limit]]
 
     def _server_search(self, q: str) -> list[dict]:
-        return self._v1(f"search:{q.lower()}", "/memes/search", TTL_LIST, params={"q": q, "limit": LIST_MAX})
+        return self._v1(f"search:{q.lower()}", "/memes/search", TTL_LIST, params={"q": q, "limit": LIST_MAX}, expect=[_MEME_ROW])
 
     def find_memes(self, q: str = "", limit: int = 20, *, tags: Iterable[str] | None = None) -> list[MemeSummary]:
         """Search every meme a bot may bring up, this key's, the subscribed tags and the hot board, best match first.
@@ -270,13 +282,13 @@ class GengWiki:
                 raise NotFoundError(f"{slug!r} is not among this key's memes{hint}", 404, "not_found")
             # Past the end of the list. Only the server knows whether this key may read it, so cache it per key.
             path = f"/memes/{urllib.parse.quote(slug, safe='')}"
-            return Meme.of(self._v1(f"meme:{slug}", path, TTL_LIST, expect=dict))
+            return Meme.of(self._v1(f"meme:{slug}", path, TTL_LIST, expect=_MEME))
         # The list proved this key may read it, so the text can be shared between keys.
         # The list's updated_at says whether the copy is current, which saves one request per meme.
         updated_at = row["updated_at"]
         path = f"/memes/{urllib.parse.quote(row['slug'], safe='')}"
         current = lambda m: m.get("updated_at") == updated_at
-        return Meme.of(self._v1(f"meme:{row['slug']}", path, 0, shared=True, valid=current, expect=dict))
+        return Meme.of(self._v1(f"meme:{row['slug']}", path, 0, shared=True, valid=current, expect=_MEME))
 
     def trending(self, tag: str = "", limit: int | None = None) -> list[MemeSummary]:
         """The hot board, 20 rows site-wide or a tag's top 5 unless limit says otherwise. Not limited by the key's scope, so all keys share one copy."""
@@ -286,7 +298,7 @@ class GengWiki:
 
     def _board(self, tag: str = "") -> list[dict]:
         # Always the full board, so a different limit later is not another request.
-        read = lambda ttl: self._v1(f"trending:{tag}", "/trending", ttl, shared=True, params={"tag": tag, "limit": LIST_MAX})
+        read = lambda ttl: self._v1(f"trending:{tag}", "/trending", ttl, shared=True, params={"tag": tag, "limit": LIST_MAX}, expect=[_MEME_ROW])
         return read(TTL_TRENDING) or read(TTL_EMPTY_BOARD)
 
     def _extra_board(self, tag: str = "") -> list[dict]:
@@ -299,7 +311,7 @@ class GengWiki:
 
     def tags(self) -> list[Tag]:
         """Every tag with how many memes carry it, the most used first. Not limited by the key's scope, so all keys share one copy."""
-        return [Tag.of(r) for r in self._v1("tags", "/tags", TTL_TRENDING, shared=True)]
+        return [Tag.of(r) for r in self._v1("tags", "/tags", TTL_TRENDING, shared=True, expect=[_TAG])]
 
     def subscriptions(self) -> list[str]:
         """The tags whose top memes the model may also use, saved on this machine for every key."""
@@ -408,7 +420,7 @@ class GengWiki:
     # ---------- persona ----------
 
     def _persona_row(self, key: str) -> dict:
-        return self._cached(namespace(key), "persona", f"{self.base_url}/v1/persona", TTL_LIST, token=key, expect=dict)
+        return self._cached(namespace(key), "persona", f"{self.base_url}/v1/persona", TTL_LIST, token=key, expect=_PERSONA)
 
     def persona(self) -> Persona | None:
         """The persona bound to the current key, or None if it has none."""
@@ -453,10 +465,10 @@ class GengWiki:
 
     def _catalog(self, q: str, ttl: float) -> list[dict]:
         url = f"{self.site_url}/api/personas"
-        rows = self._cached(_SHARED, "personas", url, ttl, token=None)
+        rows = self._cached(_SHARED, "personas", url, ttl, token=None, expect=[_CATALOG_ROW])
         if q and len(rows) >= PERSONA_LIST_MAX:
             # The list is cut off, so only the server can search the rest.
-            return self._cached(_SHARED, f"personas:{q.lower()}", url, ttl, token=None, params={"q": q})
+            return self._cached(_SHARED, f"personas:{q.lower()}", url, ttl, token=None, params={"q": q}, expect=[_CATALOG_ROW])
         return rows
 
     def _catalog_row(self, wanted: str) -> dict:
@@ -479,7 +491,7 @@ class GengWiki:
     # ---------- stickers ----------
 
     def _packs(self) -> list[dict]:
-        return self._v1("packs", "/sticker-packs", TTL_LIST)
+        return self._v1("packs", "/sticker-packs", TTL_LIST, expect=[_PACK])
 
     def sticker_packs(self) -> list[StickerPack]:
         return [StickerPack.of(p) for p in self._packs()]
@@ -514,7 +526,7 @@ class GengWiki:
     # ---------- people ----------
 
     def _linked_people(self) -> list[dict]:
-        return self._v1("people-linked", "/people/linked", TTL_LIST)
+        return self._v1("people-linked", "/people/linked", TTL_LIST, expect=[_PERSON])
 
     def linked_people(self) -> list[Person]:
         """The people picked for this key."""
@@ -523,7 +535,7 @@ class GengWiki:
     def _all_people(self) -> list[dict]:
         rows: list[dict] = []
         while True:
-            page = self._v1(f"people:{len(rows)}", "/people", TTL_LIST, shared=True, params={"limit": LIST_MAX, "offset": len(rows)})
+            page = self._v1(f"people:{len(rows)}", "/people", TTL_LIST, shared=True, params={"limit": LIST_MAX, "offset": len(rows)}, expect=[_PERSON])
             rows += page
             if len(page) < LIST_MAX:
                 return rows
@@ -535,16 +547,16 @@ class GengWiki:
     def person(self, wanted: str) -> Person:
         """One person by id, exact name or exact alias, with the memes that name them."""
         path = f"/people/{urllib.parse.quote(wanted.strip(), safe='')}"
-        return Person.of(self._v1(f"person:{wanted.strip().lower()}", path, TTL_LIST, shared=True, expect=dict))
+        return Person.of(self._v1(f"person:{wanted.strip().lower()}", path, TTL_LIST, shared=True, expect={**_PERSON, "memes": [{"slug": str, "title": str}]}))
 
     # ---------- lexicons ----------
 
     def _lexicons(self) -> list[dict]:
-        return self._v1("lexicons", "/me/lexicons", TTL_LEXICON)
+        return self._v1("lexicons", "/me/lexicons", TTL_LEXICON, expect=[_LEXICON])
 
     def _entries(self, lexicon_id: str) -> list[dict]:
         path = f"/me/lexicons/{urllib.parse.quote(lexicon_id, safe='')}/entries"
-        return self._v1(f"entries:{lexicon_id}", path, TTL_LEXICON)
+        return self._v1(f"entries:{lexicon_id}", path, TTL_LEXICON, expect=[_ENTRY])
 
     def lexicons(self) -> list[Lexicon]:
         return [Lexicon.of(x) for x in self._lexicons()]
@@ -557,8 +569,8 @@ class GengWiki:
         rows = [e for lex in self._lexicons() for e in self._entries(lex["id"])]
         return [LexiconEntry.of(e) for e in _search.search_entries(q, rows, max(1, limit))]
 
-    def _post(self, path: str, body: dict) -> dict:
-        return self._http.json("POST", f"{self.base_url}/v1{path}", token=self._token(), body=body, expect=dict)
+    def _post(self, path: str, body: dict, expect: dict) -> dict:
+        return self._http.json("POST", f"{self.base_url}/v1{path}", token=self._token(), body=body, expect=expect)
 
     def _patch_cached(self, key: str, change: Callable[[list], list]) -> None:
         """Apply a write we just made to the cached list, so writing does not force a re-read."""
@@ -567,7 +579,7 @@ class GengWiki:
             self._store.put(self._ns, key, change(hit.value))
 
     def create_lexicon(self, name: str, description: str = "") -> Lexicon:
-        row = self._post("/me/lexicons", {"name": name, "description": description})
+        row = self._post("/me/lexicons", {"name": name, "description": description}, _LEXICON)
         self._patch_cached("lexicons", lambda rows: [*rows, row])
         return Lexicon.of(row)
 
@@ -575,7 +587,7 @@ class GengWiki:
         self, lexicon_id: str, term: str, *, aliases: Sequence[str] = (), note: str = "", tags: Sequence[str] = ()
     ) -> LexiconEntry:
         path = f"/me/lexicons/{urllib.parse.quote(lexicon_id, safe='')}/entries"
-        row = self._post(path, {"term": term, "aliases": list(aliases), "note": note, "tags": list(tags)})
+        row = self._post(path, {"term": term, "aliases": list(aliases), "note": note, "tags": list(tags)}, _ENTRY)
         self._patch_cached(f"entries:{lexicon_id}", lambda rows: [*rows, row])
         self._patch_cached("lexicons", lambda rows: [{**x, "entries": x["entries"] + (x["id"] == lexicon_id)} for x in rows])
         return LexiconEntry.of(row)

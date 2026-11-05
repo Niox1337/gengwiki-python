@@ -5,11 +5,14 @@ import gzip
 import http.client
 import ipaddress
 import json
+import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
+from typing import Any
 
 from . import __version__
 from .errors import (
@@ -27,6 +30,8 @@ from .errors import (
 )
 
 _BY_STATUS = {400: BadRequestError, 401: AuthError, 403: ForbiddenError, 404: NotFoundError, 409: ConflictError}
+# Seconds an idle connection is trusted. A firewall can drop one without a word, and the next request would hang until the timeout.
+_IDLE_MAX = 30
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -69,25 +74,80 @@ def _raise_for(status: int, body: bytes, headers: email.message.Message) -> None
     raise _BY_STATUS.get(status, GengWikiError)(message, status, code)
 
 
+def _fits(value: Any, shape: Any) -> bool:
+    """shape is a type, [shape of every row], or {field: shape} for the fields that must be there. Other fields are ignored."""
+    if isinstance(shape, list):
+        return isinstance(value, list) and all(_fits(row, shape[0]) for row in value)
+    if isinstance(shape, dict):
+        return isinstance(value, dict) and all(k in value and _fits(value[k], s) for k, s in shape.items())
+    return isinstance(value, shape)
+
+
 class Http:
     def __init__(self, timeout: float = 15):
         self.timeout = timeout
         self.count = 0
         self._opener = urllib.request.build_opener(_NoRedirect)
+        self._proxies = urllib.request.getproxies()
+        self._idle: dict[tuple[str, str], list[tuple[http.client.HTTPConnection, float]]] = {}
+        self._lock = threading.Lock()
 
-    # ponytail: urllib opens one connection per request. Requests are rare by design, pool with http.client if that changes.
+    def close(self) -> None:
+        with self._lock:
+            idle, self._idle = self._idle, {}
+        for conns in idle.values():
+            for conn, _ in conns:
+                conn.close()
+
+    def _checkout(self, req: urllib.request.Request) -> tuple[http.client.HTTPConnection, bool]:
+        """An idle connection and True, or a new one and False. Only a GET reuses one, since a failure on a reused connection is sent again."""
+        if req.get_method() == "GET":
+            with self._lock:
+                idle = self._idle.get((req.type, req.host), [])
+                while idle:
+                    conn, since = idle.pop()
+                    if time.monotonic() - since < _IDLE_MAX:
+                        return conn, True
+                    conn.close()
+        cls = http.client.HTTPSConnection if req.type == "https" else http.client.HTTPConnection
+        return cls(req.host, timeout=self.timeout), False
+
+    def _exchange(self, req: urllib.request.Request) -> tuple[int, bytes, email.message.Message]:
+        if req.type in self._proxies and not urllib.request.proxy_bypass(req.host):
+            # http.client knows nothing of proxies, urllib reads them from the system.
+            try:
+                with self._opener.open(req, timeout=self.timeout) as res:
+                    return res.status, res.read(), res.headers
+            except urllib.error.HTTPError as e:
+                with e:
+                    return e.code, e.read(), e.headers
+        while True:
+            conn, reused = self._checkout(req)
+            try:
+                conn.request(req.get_method(), req.selector, req.data, dict(req.header_items()))
+                res = conn.getresponse()
+                body = res.read()
+            except Exception as e:
+                conn.close()
+                # The server closed it while it sat idle, which says nothing about the service.
+                if reused and isinstance(e, (ConnectionError, ssl.SSLError)):
+                    continue
+                raise
+            if conn.sock:  # the server may have said it closes after this response
+                with self._lock:
+                    self._idle.setdefault((req.type, req.host), []).append((conn, time.monotonic()))
+            return res.status, body, res.headers
+
     def _once(self, req: urllib.request.Request) -> tuple[bytes, email.message.Message]:
-        self.count += 1
+        with self._lock:
+            self.count += 1
         try:
-            with self._opener.open(req, timeout=self.timeout) as res:
-                body, headers = res.read(), res.headers
+            status, body, headers = self._exchange(req)
+            if not 200 <= status < 300:
+                _raise_for(status, body, headers)
             if headers.get("Content-Encoding") == "gzip":
                 body = gzip.decompress(body)
             return body, headers
-        except urllib.error.HTTPError as e:
-            with e:
-                _raise_for(e.code, e.read(), e.headers)
-            raise  # unreachable, _raise_for always raises
         # A connection cut mid-response or a damaged body is the same outage to the caller.
         except (OSError, EOFError, http.client.HTTPException, zlib.error) as e:
             raise NetworkError(f"cannot reach {req.host}: {e!r}") from e
@@ -123,14 +183,13 @@ class Http:
                 time.sleep(wait)
         raise AssertionError("unreachable")
 
-    def json(self, method: str, url: str, *, expect: type | None = None, **kwargs):
-        """The decoded body. With expect, anything but that type is a bad response, so it never reaches the cache."""
+    def json(self, method: str, url: str, *, expect: Any = None, **kwargs):
+        """The decoded body. With expect, anything but that shape is a bad response, so it never reaches the cache."""
         body, headers = self.request(method, url, **kwargs)
         try:
             value = json.loads(body) if body else None
         except ValueError as e:
             raise BadResponseError(f"expected JSON from {url}, got {headers.get_content_type()}", code="bad_response") from e
-        # ponytail: checks the outer type, not each row. Check fields if something in front ever rewrites rows.
-        if expect and not isinstance(value, expect):
-            raise BadResponseError(f"expected a JSON {expect.__name__} from {url}", code="bad_response")
+        if expect and not _fits(value, expect):
+            raise BadResponseError(f"unexpected JSON from {url}", code="bad_response")
         return value
