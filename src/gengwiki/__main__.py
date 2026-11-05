@@ -32,8 +32,13 @@ def _status(c: GengWiki, a) -> None:
         return
     saved = next((k for k in c.keys.local() if k.current), None)
     print(f"Key   {saved.name if saved else '来自参数或环境变量'}  {c._key[:15]}")
-    persona = c.persona()
-    print(f"人设  {persona.title if persona else '没有'}")
+    s = c.status()
+    print(f"人设  {s.persona or '没有'}")
+    print(f"内容  梗 {s.memes} 个，表情 {s.stickers} 张，人物 {s.people} 个，语录 {s.quotes} 句")
+    if s.missing:
+        print(f"缺权限  {'、'.join(s.missing)}，到 {c.site_url}/me 新建一个勾选它们的 Key")
+    if s.stale:
+        print("数据  暂时连不上梗Wiki，这是旧数据")
     try:
         r = c.rate_limit()
         print(f"额度  今天 {r.used_today}/{r.per_day}，这一分钟 {r.used_this_minute}/{r.per_minute}")
@@ -149,7 +154,7 @@ def _parser() -> argparse.ArgumentParser:
         return p
 
     optional = {"nargs": "?", "default": ""}
-    command(sub, "status", _status, "当前站点、Key、人设和额度")
+    command(sub, "status", _status, "当前站点、Key、人设、内容、缺的权限和额度")
     command(sub, "login", _login, "登录以管理 Key", ("email", optional))
     command(sub, "logout", _logout, "退出登录")
     command(sub, "search", _search, "搜索梗", ("q", optional))

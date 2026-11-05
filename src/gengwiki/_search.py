@@ -46,14 +46,21 @@ def match_memes(text: str, rows: list[dict], limit: int) -> list[dict]:
 
 
 def search_stickers(q: str, packs: list[dict], limit: int) -> list[dict]:
-    """Same match as the API's strpos over the caption, the pack title and the pack tags, in pack order."""
-    q = q.strip().lower()
+    """Same match as the API's strpos over the caption, the pack title and the pack tags.
+
+    A host asking for one sticker by caption wants that sticker, so the exact caption comes first, then captions containing q, then the rest, each in pack order.
+    Runs of whitespace count as one space, a model copying a caption tends to flatten them.
+    """
+    q = " ".join(q.split()).lower()
     found = []
     for p in packs:
         for s in p["stickers"]:
-            if q in " ".join([s["caption"], p["title"], *p["tags"]]).lower():
-                found.append({**s, "pack_id": p["id"], "pack_title": p["title"]})
-    return found[:limit]
+            caption = " ".join(s["caption"].split()).lower()
+            if q in " ".join([caption, p["title"], *p["tags"]]).lower():
+                rank = 0 if caption == q else 1 if q in caption else 2
+                found.append((rank, {**s, "pack_id": p["id"], "pack_title": p["title"]}))
+    found.sort(key=lambda x: x[0])
+    return [s for _, s in found[:limit]]
 
 
 def search_personas(q: str, rows: list[dict]) -> list[dict]:

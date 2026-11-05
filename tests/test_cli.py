@@ -5,6 +5,7 @@ import subprocess
 import sys
 from unittest import mock
 
+from gengwiki import GengWiki
 from gengwiki.__main__ import main
 from tests.fake import KEY_A, KEY_B
 from tests.test_memes import Base
@@ -30,6 +31,17 @@ class CliTest(Base):
         self.assertIn("tang-ping", text)
         self.assertIn("* 老哥", self.run_cli("keys")[1])
         self.assertIn("毒舌老哥", self.run_cli("status")[1])
+
+    def test_status_says_what_the_key_can_do(self):
+        self.run_cli("keys", "add", "老哥")
+        self.assertIn("梗 2 个，表情", self.run_cli("status")[1])
+        self.fake.keys[KEY_A]["scopes"] = ["memes:read"]
+        with GengWiki(KEY_A, base_url=self.url, site_url=self.url, home=self.dir.name) as c:
+            c.refresh()
+        code, text = self.run_cli("status")
+        self.assertEqual(code, 0)
+        self.assertIn("缺权限", text)
+        self.assertIn("people:read", text)
 
     def test_key_never_shows_except_when_asked(self):
         self.run_cli("keys", "add", "老哥")

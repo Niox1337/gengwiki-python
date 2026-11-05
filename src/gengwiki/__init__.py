@@ -1,4 +1,4 @@
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 from .client import GengWiki  # noqa: E402
 from .errors import (  # noqa: E402
@@ -25,6 +25,7 @@ from .models import (  # noqa: E402
     Persona,
     Person,
     RateLimit,
+    Status,
     Sticker,
     StickerPack,
     Tag,
@@ -51,6 +52,7 @@ __all__ = [
     "Persona",
     "Person",
     "RateLimit",
+    "Status",
     "RateLimitError",
     "ServerError",
     "Sticker",

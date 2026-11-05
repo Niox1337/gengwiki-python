@@ -41,7 +41,7 @@ class ToolsTest(Base):
 
     def test_guide_lists_the_linked_people_by_quote_mode(self):
         with_quote = "- 鲁迅（周树人） 现代文学家\n  - 我家门前有两棵树"
-        for mode, rule in (("cite", "说明是谁说的"), ("use", "当成自己的话"), ("both", "两种用法")):
+        for mode, rule in (("cite", "说明是谁说的"), ("use", "整条回复就是一句语录原话"), ("both", "两种用法")):
             guide = self.client(quotes=mode).tools.guide()
             self.assertIn(with_quote, guide)
             self.assertIn(rule, guide)
@@ -138,6 +138,74 @@ class ToolsTest(Base):
         c = self.client(meme_frequency=0.5)
         with mock.patch("random.random", return_value=0.9):
             self.assertIn("<memes>", c.turn("躺平", memes=True).prompt)
+
+    def test_a_rolled_direct_quote_asks_for_the_bare_quote(self):
+        for mode in ("use", "both"):
+            _, turn = self.rolled(0.1, "随便聊聊", quotes=mode, meme_frequency=0, quote_frequency=0.5)
+            self.assertIn("<quotes>", turn.prompt)
+            self.assertIn("不加任何其他文字", turn.prompt)
+            self.assertIn("一律正常回答", turn.prompt)
+            _, turn = self.rolled(0.9, "随便聊聊", quotes=mode, meme_frequency=0, quote_frequency=1)
+            self.assertIn("不加任何其他文字", turn.prompt)
+            self.assertNotIn("<quotes>", turn.prompt)
+        _, turn = self.rolled(0.1, "随便聊聊", meme_frequency=0, quote_frequency=0.5)
+        self.assertIn("<quotes>", turn.prompt)
+        self.assertNotIn("不加任何其他文字", turn.prompt)
+
+    def test_a_direct_quote_and_a_meme_do_not_share_a_reply(self):
+        c = self.client(quotes="use", meme_frequency=1, quote_frequency=1)
+        with mock.patch("random.random", return_value=0.1):
+            turn = c.turn("躺平")
+        self.assertEqual((turn.memes, turn.quotes), (True, False))
+        self.assertIn("不要主动用语录", turn.prompt)
+        with mock.patch("random.random", return_value=0.9):
+            turn = c.turn("躺平")
+        self.assertEqual((turn.memes, turn.quotes), (False, True))
+        self.assertIn("不要主动玩梗", turn.prompt)
+        with mock.patch("random.random", return_value=0.9):
+            turn = c.turn("躺平", memes=True)
+        self.assertEqual((turn.memes, turn.quotes), (True, False))
+        _, turn = self.rolled(0.1, meme_frequency=1, quote_frequency=1)
+        self.assertEqual((turn.memes, turn.quotes), (True, True))
+
+    def test_a_forced_meme_leaves_the_fit_to_the_model(self):
+        c = self.client(meme_frequency=0.5)
+        self.assertIn("这条回复要用上一个梗", self.rolled(0.1, meme_frequency=0.5)[1].prompt)
+        forced = c.turn("躺平", memes=True).prompt
+        self.assertIn("<memes>", forced)
+        self.assertIn("宁可不用", forced)
+        self.assertNotIn("这条回复要用上一个梗", forced)
+
+    def test_a_rolled_cite_stays_out_of_serious_messages(self):
+        _, turn = self.rolled(0.1, "随便聊聊", meme_frequency=0, quote_frequency=0.5)
+        self.assertIn("说明是谁说的", turn.prompt)
+        self.assertIn("一律正常回答", turn.prompt)
+
+    def test_one_reply_gets_few_quotes(self):
+        for i in range(10):
+            self.fake.people[LU_XUN]["quotes"].append(f"语录{i}")
+        _, turn = self.rolled(0.1, "随便聊聊", meme_frequency=0, quote_frequency=0.5)
+        block = turn.prompt.split("<quotes>")[1].split("</quotes>")[0]
+        self.assertEqual(sum(row.startswith("- ") for row in block.splitlines()), 6)
+
+    def test_without_linked_quotes_a_direct_mode_keeps_the_memes(self):
+        self.fake.people[LU_XUN]["quotes"] = []
+        c = self.client(quotes="use", meme_frequency=1, quote_frequency=1)
+        with mock.patch("random.random", return_value=0.9):
+            self.assertTrue(c.turn("躺平").memes)
+
+    def test_asking_by_name_passes_the_roll_unless_the_frequency_is_0(self):
+        c = self.client(quote_frequency=0.1, sticker_frequency=0.1)
+        with mock.patch("random.random", return_value=0.9):
+            for text in ("来句语录", "说句名言", "有什么金句"):
+                self.assertTrue(c.turn(text).quotes, text)
+            for text in ("发个表情", "来斗图", "来张图", "发张图看看"):
+                self.assertTrue(c.turn(text).stickers, text)
+            self.assertFalse(c.turn("今天真热").stickers)
+            self.assertFalse(c.turn("今天真热").quotes)
+            off = self.client(quote_frequency=0, sticker_frequency=0)
+            self.assertFalse(off.turn("来句名言").quotes)
+            self.assertFalse(off.turn("来张图").stickers)
 
     def test_quote_frequency_does_nothing_with_quotes_off(self):
         c, turn = self.rolled(0.9, quotes="off", quote_frequency=0.5)

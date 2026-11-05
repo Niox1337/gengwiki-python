@@ -43,6 +43,18 @@ class SearchTest(unittest.TestCase):
             self.assertEqual(search_stickers(q, packs, 5)[0]["pack_id"], "p")
         self.assertEqual(search_stickers("狗", packs, 5), [])
 
+    def test_a_sticker_asked_for_by_caption_beats_the_rest_of_its_matches(self):
+        def sticker(caption):
+            return {"id": caption, "caption": caption, "url": "u"}
+
+        packs = [
+            {"id": "a", "title": "笑", "tags": [], "stickers": [sticker("哭")]},
+            {"id": "b", "title": "猫", "tags": [], "stickers": [sticker("笑哭"), sticker("笑"), sticker("大笑\n不止")]},
+        ]
+        self.assertEqual([s["id"] for s in search_stickers("笑", packs, 5)], ["笑", "笑哭", "大笑\n不止", "哭"])
+        self.assertEqual(search_stickers(" 大笑  不止 ", packs, 1)[0]["id"], "大笑\n不止")
+        self.assertEqual([s["id"] for s in search_stickers("", packs, 5)], ["哭", "笑哭", "笑", "大笑\n不止"])
+
     def test_entries(self):
         e = [{"term": "摆烂", "aliases": ["bailan"], "note": "", "tags": []}]
         self.assertEqual(search_entries("BAILAN", e, 5), e)

@@ -24,7 +24,7 @@ from .errors import (
     UnavailableError,
 )
 from .keys import Keys
-from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, Person, RateLimit, Sticker, StickerPack, Tag, Turn
+from .models import Lexicon, LexiconEntry, Meme, MemeSummary, Persona, Person, RateLimit, Status, Sticker, StickerPack, Tag, Turn
 from .tools import QUOTE_MODES, Tools
 
 log = logging.getLogger("gengwiki")
@@ -70,7 +70,13 @@ _ENTRY = {"term": str, "aliases": list, "note": str, "tags": list}
 
 _MEME_RULE = "回复不需要用梗。只有某个梗和当前内容非常贴切时才用它，不贴切就正常回复，宁可不用也不要硬凑。"
 # The roll has already said yes, so the model only has to pick. Softer wording stayed under 10% against DeepSeek, this reaches about half, some of it forced.
+# For a host that has decided to speak up unasked. "Must use one" made DeepSeek answer nearly every message, even "+1".
+_MEME_RULE_FORCED = "只有某个梗和这句话非常贴切时才用它，宁可不用也不要硬凑。"
 _MEME_RULE_ROLLED = "这条回复要用上一个梗。从下面选一个和当前内容最说得通的，自然地用进回复里。只有对方在认真求助、倾诉难过的事时才不用。"
+
+# Asking for one of these by name passes its roll, unless the frequency is 0.
+_ASK_QUOTE = ("语录", "名言", "金句")
+_ASK_STICKER = ("表情", "斗图", "来张图", "发张图")
 
 
 def _prompt_line(r: dict) -> str:
@@ -407,14 +413,20 @@ class GengWiki:
         """Rolls the three frequencies for one reply, so code decides whether the model may and the model decides whether it fits.
 
         Put prompt after the user's message. Asking for a sticker or a quote by name passes its roll unless the frequency is 0.
-        memes forces that roll, for a host that has already decided to speak up with a meme. Takes no request once all is cached.
+        memes forces that roll, for a host that may speak up with a meme. The model still judges the fit. Takes no request once all is cached.
         tags replaces the saved subscriptions, for a host that keeps its own per chat.
         """
         use_memes = random.random() < self.meme_frequency if memes is None else memes
-        use_quotes = self.quotes != "off" and (random.random() < self.quote_frequency or (self.quote_frequency > 0 and "语录" in text))
-        use_stickers = random.random() < self.sticker_frequency or (self.sticker_frequency > 0 and "表情" in text)
+        use_quotes = self.quotes != "off" and (random.random() < self.quote_frequency or (self.quote_frequency > 0 and any(w in text for w in _ASK_QUOTE)))
+        # A bare quote is the whole reply, so it cannot share one with a meme. A forced meme wins, the host has already decided.
+        if self.quotes in ("use", "both") and use_memes and use_quotes and (memes or self.tools._linked_quotes()):
+            if memes or random.random() < 0.5:
+                use_quotes = False
+            else:
+                use_memes = False
+        use_stickers = random.random() < self.sticker_frequency or (self.sticker_frequency > 0 and any(w in text for w in _ASK_STICKER))
         parts = [
-            self._meme_block(text, 15, _MEME_RULE_ROLLED, tags) if use_memes else "这条回复不要主动玩梗。",
+            self._meme_block(text, 15, _MEME_RULE_FORCED if memes else _MEME_RULE_ROLLED, tags) if use_memes else "这条回复不要主动玩梗。",
             self.tools._quote_turn(use_quotes),
             self.tools._sticker_turn(use_stickers),
         ]
@@ -596,6 +608,36 @@ class GengWiki:
         return LexiconEntry.of(row)
 
     # ---------- usage, always live ----------
+
+    def status(self) -> Status:
+        """What this key can do, the first thing to check when a bot never jokes.
+
+        A scope the key lacks lands in missing. A bad key, or no wiki and nothing cached, still raises.
+        """
+        missing: list[str] = []
+
+        def read(scope: str, fn: Callable[[], Any], empty: Any) -> Any:
+            try:
+                return fn()
+            except ForbiddenError:
+                missing.append(scope)
+                return empty
+
+        persona = read("persona:read", self.persona, None)
+        memes = read("memes:read", self._list, [])
+        packs = read("stickers:read", self._packs, [])
+        people = read("people:read", self._linked_people, [])
+        # ponytail: the board is shared, so one another key cached hides a missing trending:read until it expires
+        read("trending:read", self._board, [])
+        return Status(
+            persona.title if persona else "",
+            len(memes),
+            sum(len(p["stickers"]) for p in packs),
+            len(people),
+            sum(len(p["quotes"]) for p in people),
+            missing,
+            self.stale,
+        )
 
     def usage(self) -> dict:
         """Requests per day over the last 30 days, as the server counted them."""

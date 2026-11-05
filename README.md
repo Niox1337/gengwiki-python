@@ -10,7 +10,7 @@ pip install gengwiki
 
 ```bash
 gengwiki keys add 老哥      # 粘贴时不显示，也不会留在命令历史里
-gengwiki status            # 查看当前 Key、人设和额度
+gengwiki status            # 查看当前 Key、人设、内容和额度
 ```
 
 ```python
@@ -42,7 +42,7 @@ messages = [persona.as_message(), {"role": "user", "content": "你好"}]
 
 ```bash
 gengwiki login                # 登录，密码不会保存
-gengwiki status               # 当前站点、Key、人设和额度
+gengwiki status               # 当前站点、Key、人设、内容、缺的权限和额度
 gengwiki search 躺平           # 也有 meme、trending、personas
 gengwiki use 温柔姐姐           # 切换人设
 gengwiki tags                 # 全部标签
@@ -50,6 +50,8 @@ gengwiki subscribe 游戏         # 订阅标签，也有 unsubscribe，不带�
 gengwiki sync --images        # 下载全部内容供离线使用
 gengwiki keys                 # 也有 add、use、remove、secret、remote、rotate、revoke
 ```
+
+代码里用 `client.status()` 可以拿到同样的内容，包括人设名字，梗、表情、人物和语录的数量，Key 缺的权限，以及数据是不是旧的。Key 无效时会抛出 `AuthError`。
 
 ## 给大模型用的工具
 
@@ -107,8 +109,8 @@ Key 关联的人物会自动进入 `client.tools.guide()`，模型不用查就�
 |---|---|
 | `off` | 不使用。提示词和工具结果都不带语录，并要求模型不要引用 |
 | `cite` | 引用，这是默认值。贴切时照抄原话并说明是谁说的 |
-| `use` | 直接使用。贴切时当成自己的话说出来，用户问起出处时如实说 |
-| `both` | 引用和使用。两种都可以，模型看场合选 |
+| `use` | 直接使用。语境合适时整条回复只发一句语录原话，不加其他文字，用户问起出处时如实说 |
+| `both` | 引用和使用。两种都可以，优先只发语录原话 |
 
 ```python
 client = GengWiki(quotes="both")
@@ -136,11 +138,11 @@ messages = [
 | 参数 | 默认值 | 说明 |
 |---|---|---|
 | `meme_frequency` | 0.2 | 掷中时 `turn.prompt` 带上一批梗，并要求模型尽量用上一个。模型被问到时仍然可以查梗 |
-| `quote_frequency` | 1 | 掷中时带上语录。Key 没有关联带语录的人物，或者 `quotes="off"` 时无效 |
+| `quote_frequency` | 1 | 掷中时带上语录。`use` 和 `both` 掷中后这条回复可以只发语录原话，和梗同时掷中时二选一。Key 没有关联带语录的人物，或者 `quotes="off"` 时无效 |
 | `sticker_frequency` | 1 | 掷中时带上表情说明 |
 
 - 没掷中时不带素材，`turn.prompt` 里会写明这条回复不要主动用。`turn.memes`、`turn.quotes` 和 `turn.stickers` 是这次掷的结果，可以用来拿掉工具，比如没掷中时不给模型 `search_stickers`。
-- 用户的话里提到“表情”或“语录”时算掷中，只有频率为 0 时例外。
+- 用户的话里提到“表情”“斗图”“来张图”“发张图”时算表情掷中，提到“语录”“名言”“金句”时算语录掷中，只有频率为 0 时例外。
 - 频率为 0 时不带素材，`search_stickers` 工具也不再返回结果。直接调用 `client.search_stickers()` 不受频率影响。
 - 频率为 1 时，表情说明和语录留在 `guide()` 里，方便模型服务的提示词缓存，这也是一直以来的行为。频率在 0 和 1 之间时，它们只在掷中的回复里出现，所以只调用 `guide()` 不调用 `turn()` 的话，模型拿不到它们。
 

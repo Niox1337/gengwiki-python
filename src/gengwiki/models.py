@@ -142,6 +142,19 @@ class Tag(Model):
 
 
 @dataclass(frozen=True)
+class Status(Model):
+    """What a key can do right now. missing holds the scopes it lacks, stale means the wiki is out of reach and this is the old copy."""
+
+    persona: str = ""
+    memes: int = 0
+    stickers: int = 0
+    people: int = 0
+    quotes: int = 0
+    missing: list[str] = field(default_factory=list)
+    stale: bool = False
+
+
+@dataclass(frozen=True)
 class RateLimit(Model):
     per_minute: int | None = None
     per_day: int | None = None

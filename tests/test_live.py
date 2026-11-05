@@ -68,10 +68,13 @@ class LiveTest(unittest.TestCase):
     def test_local_sticker_search_matches_the_server(self):
         self.key()
         for q in ["", "震惊", "猫", "可爱", "动物", "开", "狗", "  猫 "]:
-            server = self.c._http.json("GET", f"{API}/v1/stickers/search", token=self.c._key, params={"q": q})
-            self.assertEqual([s.id for s in self.c.search_stickers(q)], [s["id"] for s in server], repr(q))
-            for ours, theirs in zip(self.c.search_stickers(q), server):
-                self.assertEqual((ours.caption, ours.url, ours.pack_id, ours.pack_title),
+            server = {s["id"]: s for s in self.c._http.json("GET", f"{API}/v1/stickers/search", token=self.c._key, params={"q": q})}
+            ours = self.c.search_stickers(q)
+            # The same stickers, the order is ours
+            self.assertEqual({s.id for s in ours}, set(server), repr(q))
+            for s in ours:
+                theirs = server[s.id]
+                self.assertEqual((s.caption, s.url, s.pack_id, s.pack_title),
                                  (theirs["caption"], theirs["url"], theirs["pack"]["id"], theirs["pack"]["title"]))
 
     def test_catalog_search_matches_the_server(self):
