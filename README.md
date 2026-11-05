@@ -146,6 +146,16 @@ messages = [
 
 `client.meme_prompt()` 不掷骰子，措辞也更谨慎，模型只在非常贴切时才用。想按频率来就用 `client.turn()`。
 
+## Key 存在哪里
+
+Key 和登录令牌默认存在 `~/.gengwiki/<站点>/keys.json`，是只有当前用户能读的明文文件，和 `~/.aws/credentials` 一样。想放进系统钥匙串（Windows 凭据管理器、macOS 钥匙串、Linux Secret Service），就装上下面这个可选依赖。
+
+```bash
+pip install "gengwiki[keychain]"
+```
+
+装好后，下一次保存时密钥就会移进钥匙串，文件里只留一个引用。没有钥匙串的环境（比如 Docker 容器）会继续用文件并记一条警告。之后卸载这个依赖时，文件里的引用读不出来，会明确报错，不会丢数据。
+
 ## 开发
 
 ```bash
