@@ -1,5 +1,6 @@
 """Tools for function calling, in OpenAI or Anthropic format. Replies are trimmed, because every field costs the model tokens."""
 
+import datetime
 import json
 import random
 from typing import TYPE_CHECKING, Any, Callable, Sequence
@@ -143,6 +144,12 @@ _PROMPT_BIO = 200
 _PROMPT_QUOTES = 8
 # What one reply gets when its roll passes. The rest stay out, so a long list still gets used in turn.
 _TURN_QUOTES = 15
+# Captions in the system prompt, and in one reply when its roll passes. search_stickers still finds the rest.
+_PROMPT_STICKERS = 60
+_TURN_STICKERS = 30
+# What the system prompt holds over all linked people, shared out evenly. Five people get all of the above, twenty get half a bio and two quotes each.
+_LINKED_BIO = 2000
+_LINKED_QUOTES = 40
 
 _SEND_MARKDOWN = "发送时先用 search_stickers 搜这条说明拿到 url，再写成 ![说明](url) 放进回复。url 必须照抄工具的结果，不能自己编或改。"
 
@@ -158,10 +165,10 @@ def _flat(text: str) -> str:
     return " ".join(text.split()).replace("<", "＜")
 
 
-def _person_lines(p: dict, quotes: bool) -> str:
+def _person_lines(p: dict, bio: int, quotes: int) -> str:
     aliases = f"（{'、'.join(map(_flat, p['aliases']))}）" if p["aliases"] else ""
-    head = f"- {_flat(p['name'])}{aliases} {_flat(p['bio'])[:_PROMPT_BIO]}"
-    said = [f"  - {_flat(q)}" for q in p["quotes"][:_PROMPT_QUOTES]] if quotes else []
+    head = f"- {_flat(p['name'])}{aliases} {_flat(p['bio'])[:bio]}"
+    said = [f"  - {_flat(q)}" for q in p["quotes"][:quotes]]
     return "\n".join([head, *said])
 
 
@@ -237,25 +244,27 @@ class Tools:
         frequency = self._client.sticker_frequency
         if frequency == 0:
             return _NO_STICKERS
-        lines = self._captions()
+        # A new pick each day, so a long list still gets used in turn and a provider's prompt cache holds for the day.
+        lines = self._captions(_PROMPT_STICKERS, random.Random(datetime.date.today().isoformat()))
         if not lines:
             return ""
         # At 1 the list stays in the system prompt, where a provider's prompt cache can make it cheap. Below that each reply brings its own.
         return _STICKERS.format(send_rule=send_rule) + ("\n\n" + _STICKER_LIST.format(lines=lines) if frequency == 1 else _STICKERS_LATER)
 
-    def _captions(self) -> str:
+    def _captions(self, limit: int, pick: Any = random) -> str:
         try:
             packs = self._client._packs()
         except ForbiddenError:
             packs = []
-        # ponytail: lists every caption, the model does the matching on meaning. Costs at most 150 lines a key, sample them if that hurts.
-        return "\n".join(f"- {' '.join(s['caption'].split())}" for p in packs for s in p["stickers"])
+        # The model does the matching on meaning.
+        lines = [f"- {' '.join(s['caption'].split())}" for p in packs for s in p["stickers"]]
+        return "\n".join(pick.sample(lines, limit) if len(lines) > limit else lines)
 
     def _sticker_turn(self, allowed: bool) -> str:
         """What one reply gets. Nothing at 0 or 1, where the guide already says it all."""
         if not 0 < self._client.sticker_frequency < 1:
             return ""
-        lines = self._captions()
+        lines = self._captions(_TURN_STICKERS)
         if not lines:
             return ""
         return _STICKER_LIST.format(lines=lines) if allowed else "这条回复不要发表情。"
@@ -283,8 +292,9 @@ class Tools:
         except ForbiddenError:
             return ""
         mode, frequency = self._client.quotes, self._client.quote_frequency
-        # ponytail: a bio and 8 quotes each, for up to 20 people. Lower the _PROMPT limits if a big key costs too much.
-        lines = "\n".join(_person_lines(p, mode != "off" and frequency == 1) for p in people)
+        bio = min(_PROMPT_BIO, _LINKED_BIO // max(1, len(people)))
+        quotes = min(_PROMPT_QUOTES, _LINKED_QUOTES // max(1, len(people))) if mode != "off" and frequency == 1 else 0
+        lines = "\n".join(_person_lines(p, bio, quotes) for p in people)
         rule = _QUOTE_RULES[mode]
         if mode != "off":
             rule += _QUOTE_FIT

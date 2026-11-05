@@ -1,10 +1,12 @@
 import json
 import random
 import unittest
+import uuid
 from types import SimpleNamespace as NS
 from unittest import mock
 
-from tests.fake import KEY_A, LU_XUN
+from gengwiki import tools
+from tests.fake import KEY_A, LU_XUN, PACK, STICKER
 from tests.test_memes import Base
 
 
@@ -282,6 +284,59 @@ class ToolsTest(Base):
         got = json.loads(self.client().tools.call("get_meme", {"slug": "躺平族"}))
         self.assertEqual(got["error"]["code"], "not_found")
         self.assertIn("tang-ping", got["error"]["message"])
+
+
+class PromptSizeTest(Base):
+    def stickers(self, c, count):
+        self.fake.packs[PACK]["stickers"] = [{"id": STICKER, "caption": f"说明{i}"} for i in range(count)]
+        c.refresh()
+
+    @staticmethod
+    def listed(text):
+        return [line for line in text.split("<stickers>")[1].split("</stickers>")[0].splitlines() if line]
+
+    def test_a_big_pack_is_sampled_the_same_way_all_day(self):
+        c = self.client()
+        self.stickers(c, 150)
+        first = self.listed(c.tools.guide())
+        self.assertEqual(len(first), tools._PROMPT_STICKERS)
+        self.assertEqual(len(set(first)), tools._PROMPT_STICKERS)
+        self.assertEqual(first, self.listed(self.client().tools.guide()))
+
+    def test_a_pack_within_the_limit_keeps_its_order(self):
+        c = self.client()
+        self.stickers(c, tools._PROMPT_STICKERS)
+        self.assertEqual(self.listed(c.tools.guide()), [f"- 说明{i}" for i in range(tools._PROMPT_STICKERS)])
+
+    def test_each_reply_gets_its_own_sample(self):
+        c = self.client(sticker_frequency=0.5)
+        self.stickers(c, 150)
+        first = self.listed(c.tools._sticker_turn(True))
+        self.assertEqual(len(first), tools._TURN_STICKERS)
+        self.assertNotEqual(first, self.listed(c.tools._sticker_turn(True)))
+
+    def linked(self, c, count):
+        people = {str(uuid.uuid4()): i for i in range(count)}
+        for pid, i in people.items():
+            self.fake.people[pid] = {"id": pid, "name": f"人物{i}", "aliases": [], "tags": [], "bio": "传" * 300, "quotes": [f"语录{i}-{j}" for j in range(10)]}
+        self.fake.keys[KEY_A]["people"] = list(people)
+        c.refresh()
+        return c.tools.guide()
+
+    def test_a_few_people_get_the_full_allowance(self):
+        guide = self.linked(self.client(), 5)
+        self.assertIn("语录0-7", guide)
+        self.assertNotIn("语录0-8", guide)
+        self.assertIn("传" * tools._PROMPT_BIO, guide)
+        self.assertNotIn("传" * (tools._PROMPT_BIO + 1), guide)
+
+    def test_twenty_people_share_the_same_budget(self):
+        guide = self.linked(self.client(), 20)
+        self.assertIn("人物19", guide)
+        self.assertIn("语录19-1", guide)
+        self.assertNotIn("语录0-2", guide)
+        self.assertIn("传" * 100, guide)
+        self.assertNotIn("传" * 101, guide)
 
 
 if __name__ == "__main__":
