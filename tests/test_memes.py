@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -268,6 +269,49 @@ class MemeTest(Base):
         self.fake.memes["tang-ping"]["title"] = "躺平二"
         c.refresh()
         self.assertEqual(c.search_memes("躺平")[0].title, "躺平二")
+
+
+class LockTest(Base):
+    def run_all(self, *calls):
+        errors = []
+
+        def guarded(call):
+            try:
+                call()
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=guarded, args=(call,)) for call in calls]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+
+    def test_the_same_miss_shares_one_fetch(self):
+        c = self.client()
+        fetched = []
+
+        def fetch(*args, **kwargs):
+            fetched.append(args)
+            time.sleep(0.05)
+            return []
+
+        with mock.patch.object(c._http, "json", fetch):
+            self.run_all(*[lambda: c._v1("same", "/x", 60, expect=list)] * 8)
+        self.assertEqual(len(fetched), 1)
+
+    def test_unrelated_misses_do_not_wait_for_each_other(self):
+        c = self.client()
+        other = next(k for k in map(str, range(1000)) if c._lock_for(c._ns, k) is not c._lock_for(c._ns, "a"))
+        both_inside = threading.Barrier(2, timeout=5)
+
+        def fetch(*args, **kwargs):
+            both_inside.wait()  # breaks if one fetch waits for the other to finish
+            return []
+
+        with mock.patch.object(c._http, "json", fetch):
+            self.run_all(lambda: c._v1("a", "/a", 60, expect=list), lambda: c._v1(other, "/b", 60, expect=list))
 
 
 if __name__ == "__main__":

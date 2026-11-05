@@ -119,7 +119,8 @@ class GengWiki:
         self._http = Http(timeout)
         self._store = Store(self.home / "cache.sqlite3")
         self._keyring = Keyring(self.home / "keys.json")
-        self._lock = threading.Lock()
+        # A fixed number, so a long-running bot with endless search words holds no more locks than this.
+        self._locks = [threading.Lock() for _ in range(64)]
         self._paused: dict[str | None, float] = {}  # by token, since a rate limit belongs to one key
         self._key = api_key or os.environ.get("GENGWIKI_API_KEY")
         if not self._key:
@@ -164,6 +165,10 @@ class GengWiki:
             self._store.expire(namespace(saved["key"]))
         self._paused.clear()
 
+    def _lock_for(self, *key: str) -> threading.Lock:
+        """The same miss shares one fetch, an unrelated one does not wait for it."""
+        return self._locks[hash(key) % len(self._locks)]
+
     def _cached(
         self,
         ns: str,
@@ -193,9 +198,7 @@ class GengWiki:
         hit = self._store.get(ns, key)
         if good(hit):
             return answer(hit)
-        # ponytail: one lock over all misses, so parallel tool calls share a fetch and cache hits never wait.
-        # Per-key locks if unrelated misses ever queue up noticeably.
-        with self._lock:
+        with self._lock_for(ns, key):
             hit = self._store.get(ns, key)
             if good(hit):
                 return answer(hit)
@@ -374,7 +377,7 @@ class GengWiki:
         return self._meme_block(text, limit, _MEME_RULE, tags)
 
     def _meme_block(self, text: str, limit: int, rule: str, tags: Iterable[str] | None = None) -> str:
-        # ponytail: the model does the matching on meaning, it only sees limit memes. Embeddings if a big list needs better picks.
+        # The model does the matching on meaning, it only sees limit memes. Embeddings if a big list needs better picks.
         tags = None if tags is None else list(tags)  # read twice below
         pool = self._pool(tags)
         picked = _search.match_memes(text, pool, limit)
@@ -506,7 +509,7 @@ class GengWiki:
         folder = self.home / "stickers"
         for found in folder.glob(f"{sid}.*"):
             return found
-        with self._lock:
+        with self._lock_for("sticker", sid):
             for found in folder.glob(f"{sid}.*"):
                 return found
             # The image route takes no key and does not count against one.
