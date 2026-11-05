@@ -32,6 +32,7 @@ from .errors import (
 _BY_STATUS = {400: BadRequestError, 401: AuthError, 403: ForbiddenError, 404: NotFoundError, 409: ConflictError}
 # Seconds an idle connection is trusted. A firewall can drop one without a word, and the next request would hang until the timeout.
 _IDLE_MAX = 30
+RETRY_WAIT = 0.5  # doubles each try
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -177,7 +178,7 @@ class Http:
                 return self._once(req)
             except UnavailableError as e:
                 # A long Retry-After is the daily limit, waiting it out would hang the caller.
-                wait = e.retry_after if isinstance(e, RateLimitError) else 0.5 * 2**attempt
+                wait = e.retry_after if isinstance(e, RateLimitError) else RETRY_WAIT * 2**attempt
                 if attempt == retries or wait > 5:
                     raise
                 time.sleep(wait)

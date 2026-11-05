@@ -72,6 +72,7 @@ class Fake:
             KEY_A: self._key(KEY_A, "a", PERSONA_A, ["tang-ping", "yyds"], [PACK], people=[LU_XUN]),
             KEY_B: self._key(KEY_B, "b", PERSONA_B, ["yyds"], []),
         }
+        self.backup: list[dict] = []  # what the backup wiki has
         self.lexicons: dict[str, dict] = {}
         self.entries: dict[str, list] = {}
         self.hits: list[tuple[str, str]] = []
@@ -168,6 +169,10 @@ def serve(fake: Fake):
                     return self.reply(429, {"error": {"code": "rate_limited", "message": "x"}}, [("Retry-After", "3600")])
                 if fake.status:
                     return self.error_reply(fake.status, "internal")
+                if path == "/backup":
+                    word = q.get("q", "").lower()
+                    items = [i for i in fake.backup if any(word in s.lower() for s in [i["title"], *i["aliases"]])]
+                    return self.reply(200, {"schema_version": 1, "items": items, "has_more": False})
                 if path.startswith("/v1/"):
                     try:
                         return self.v1(method, path[3:], q)
@@ -309,7 +314,7 @@ def serve(fake: Fake):
             self.route("DELETE")
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
 
     def stop():
         server.shutdown()

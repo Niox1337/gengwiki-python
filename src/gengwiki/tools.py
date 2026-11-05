@@ -164,6 +164,8 @@ _SEND_MARKDOWN = "发送时先用 search_stickers 搜这条说明拿到 url，�
 
 def _summary(m) -> dict:
     row = {"slug": m.slug, "title": m.title, "aliases": m.aliases, "summary": m.summary}
+    if not m.slug:
+        del row["slug"]  # from the backup wiki, get_meme has nothing more on it
     # Most memes have none yet, and an empty field still costs tokens.
     return {**row, "usage_scenario": m.usage_scenario} if m.usage_scenario else row
 
@@ -189,7 +191,10 @@ def _handlers(c: "GengWiki") -> dict[str, Callable[..., Any]]:
             wanted = slug.strip().lower()
             row = next((r for r in c._pool(tags) if r["slug"] == slug or wanted in (s.lower() for s in [r["title"], *r["aliases"]])), None)
             if row is None:
-                raise
+                backup = c.backup_memes(slug, 1) if c.backup else []
+                if not backup:
+                    raise
+                return _summary(backup[0])
             return {**_summary(MemeSummary.of(row)), "note": "这个梗只能查到释义和使用场景，没有完整解释和例句"}
         return {
             **_summary(m),
@@ -199,7 +204,10 @@ def _handlers(c: "GengWiki") -> dict[str, Callable[..., Any]]:
         }
 
     def search_memes(q: str, limit: int = 5, tags: list[str] | None = None) -> list[dict]:
-        return [_summary(m) for m in c.find_memes(q, int(limit), tags=tags)]
+        found = c.find_memes(q, int(limit), tags=tags)
+        if not found and c.backup:
+            found = c.backup_memes(q, int(limit))
+        return [_summary(m) for m in found]
 
     def trending_memes(tag: str = "", limit: int = 10) -> list[dict]:
         return [_summary(m) for m in c.trending(tag, int(limit))]

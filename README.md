@@ -95,6 +95,10 @@ client.unsubscribe("游戏")
 
 共有 7 个工具，分别是 `search_memes`、`get_meme`、`trending_memes`、`search_stickers`、`search_people`、`get_person` 和 `search_lexicon`。可以用 `client.tools.openai(["search_memes"])` 只选其中几个。
 
+用户问“XX是什么梗”时，`client.turn()` 会带上查到的资料，模型不用再调用工具就能回答。不用 `turn()` 的话，`client.explain(用户的话)` 单独返回这段资料，不是这类问题时返回空字符串。
+
+梗Wiki 查不到的词会到一个公开的备用词库里找同名的梗，`search_memes`、`get_meme` 工具、`client.turn()` 和 `client.explain()` 都会用上。不想把词发出去就传入 `backup=False`。只发送查不到的那个词，2 秒超时，出错时当作没查到。结果在本机缓存一天，查不到的缓存一小时。`client.backup_memes(词)` 可以直接查，不受这个开关影响，查到的梗没有 slug。
+
 ## 人物
 
 ```python
