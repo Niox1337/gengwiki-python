@@ -18,7 +18,7 @@ STICKER = "44444444-4444-4444-4444-444444444444"
 LU_XUN = "55555555-5555-5555-5555-555555555555"
 DU_FU = "66666666-6666-6666-6666-666666666666"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 16
-ALL_SCOPES = ["memes:read", "trending:read", "persona:read", "stickers:read", "people:read", "lexicon:read:self", "lexicon:write:self"]
+ALL_SCOPES = ["memes:read", "trending:read", "persona:read", "stickers:read", "people:read", "lexicon:read:self", "lexicon:write:self", "self:write"]
 TOKEN = "jwt-token"
 
 
@@ -75,6 +75,7 @@ class Fake:
         self.backup: list[dict] = []  # what the backup wiki has
         self.lexicons: dict[str, dict] = {}
         self.entries: dict[str, list] = {}
+        self.mine: dict[str, dict] = {"words": {}, "stickers": {}, "personas": {}, "people": {}}  # by name, like the API's upserts
         self.hits: list[tuple[str, str]] = []
         self.status: int | None = None  # answer everything with this status
         self.html_ok = False  # answer everything with a 200 HTML page, like a captive portal
@@ -282,6 +283,23 @@ def serve(fake: Fake):
                 if need("lexicon:read:self"):
                     return self.reply(200, fake.entries[lid])
                 return
+            kind = path.split("/")[2] if path.startswith("/me/") else ""
+            if kind in fake.mine and need("self:write"):
+                store = fake.mine[kind]
+                if method == "DELETE":
+                    gone = store.pop(path.split("/", 3)[3], None)
+                    return self.reply(200, {"deleted": 1}) if gone else self.error_reply(404, "not_found")
+                if kind == "stickers":
+                    if not self.rfile.read(int(self.headers["Content-Length"])).startswith(PNG[:8]):
+                        return self.error_reply(400, "bad_request")
+                    name = q["caption"]
+                    row = {"id": str(uuid.uuid4()), "caption": name, "url": f"{base}/v1/stickers/x/image", "pack": {"id": PACK, "title": "我的表情包"}}
+                else:
+                    row = {"id": str(uuid.uuid4()), **self.body()}
+                    name = row.get("term") or row.get("title") or row.get("name")
+                code = 200 if name in store else 201
+                store[name] = row
+                return self.reply(code, row)
             return self.error_reply(404, "not_found")
 
         def account(self, method, path):

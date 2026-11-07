@@ -23,7 +23,7 @@ client.meme("tang-ping").body
 client.persona().as_message()              # {"role": "system", "content": "..."}
 ```
 
-没有 Key 也能用，只是只有梗Wiki 热门的 20 个梗和 10 个人物，没有人设和表情包。第一次调用 `client.turn()` 时返回的 `notice` 会提醒去哪里拿 Key，可以把它转给运行机器人的人。
+没有 Key 也能用，只是只有梗Wiki 热门的 20 个梗和 10 个人物，没有人设和表情包。第一次调用 `client.turn()` 时返回的 `notice` 会提醒去哪里拿 Key，可以把它转给运行机器人的人。不想没有 Key 时也玩梗，传入 `guest_memes=False`，`turn()` 就不带梗，只保留这条提醒。
 
 更多用法见 [example/](https://github.com/Niox1337/gengwiki-python/tree/main/example)。
 
@@ -123,6 +123,21 @@ client = GengWiki(quotes="both")
 ```
 
 需要 Key 勾选了 `people:read`，旧 Key 没有这个权限，要新建一个。
+
+## 添加自己的内容
+
+```python
+client.add_word("电子榨菜", "吃饭时看的视频")
+client.add_sticker(open("doge.png", "rb").read(), "狗头")
+client.add_persona("毒舌猫", "你是一只说话很毒的猫……")
+client.add_person("老王", "隔壁宿舍的室友", ["今天不学了"])
+
+client.remove_word("电子榨菜")   # 返回删掉了几个，没找到时是 0
+```
+
+这些内容只有自己的 Key 能用，不公开，也不用审核。词进入你的个人词库，用户的话里出现它时 `client.turn()` 会把解释带给模型。表情放进私有表情包，人物关联到当前 Key，马上就能用。Key 的人设创建后不能改，新的人设要在[我的组合](https://gengwiki.niox.lol/me)新建一个组合选它。
+
+表情最大 1MB，边长不超过 500。同名的词、人设和人物会更新，不会重复添加。需要 Key 有 `self:write`，每个 Key 都有。
 
 ## 频率
 

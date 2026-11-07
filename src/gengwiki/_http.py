@@ -160,7 +160,7 @@ class Http:
         *,
         token: str | None = None,
         params: dict | None = None,
-        body: dict | None = None,
+        body: dict | bytes | None = None,
         retries: int = 0,
     ) -> tuple[bytes, email.message.Message]:
         if params:
@@ -169,7 +169,10 @@ class Http:
         if token:
             headers["Authorization"] = f"Bearer {token}"
         data = None
-        if body is not None:
+        if isinstance(body, bytes):
+            data = body
+            headers["Content-Type"] = "application/octet-stream"
+        elif body is not None:
             data = json.dumps(body).encode()
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
