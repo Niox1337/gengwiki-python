@@ -182,7 +182,7 @@ class MemeTest(Base):
         c = GengWiki(base_url=self.url, site_url=self.url, home=self.dir.name)
         self.addCleanup(c.close)
         with self.assertRaisesRegex(AuthError, "GENGWIKI_API_KEY"):
-            c.search_memes()
+            c.usage()
         self.assertEqual(c.request_count, 0)
 
     def test_the_key_never_reaches_the_cache_file(self):

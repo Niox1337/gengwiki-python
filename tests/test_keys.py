@@ -59,12 +59,13 @@ class LocalKeysTest(Base):
         c.keys.add("a", KEY_A)
         c.keys.add("b", KEY_B)
         c.keys.remove("a")
+        self.assertIsNone(c._key)
         with self.assertRaisesRegex(AuthError, r"keys\.use.*'b'"):
-            c.search_memes()
+            c.usage()
 
     def test_no_key_says_where_to_get_one(self):
         with self.assertRaisesRegex(AuthError, "/me"):
-            self.client(key=None).search_memes()
+            self.client(key=None).usage()
 
     def test_a_host_never_sees_keys_saved_for_another(self):
         self.client(key=None).keys.add("a", KEY_A)
@@ -295,7 +296,7 @@ class AccountTest(Base):
         self.assertTrue(self.fake.keys[KEY_A]["revoked"])
         self.assertEqual(c.keys.local(), [])
         with self.assertRaises(AuthError):
-            c.search_memes()
+            c.usage()
         self.assertIsNone(c._store.get(namespace(KEY_A), "list"))
 
     def test_revoke_by_remote_name_and_ambiguity(self):

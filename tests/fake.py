@@ -126,6 +126,12 @@ class Fake:
             "revoked_at": "2026-01-02T00:00:00Z" if k["revoked"] else None,
         }
 
+    def guest(self):
+        """A call without a key, like guest_caller in api/src/main.rs. The top 20 hot memes and the first 10 people."""
+        top = sorted(self.memes.values(), key=lambda m: -m["heat"])[:20]
+        scopes = ["memes:read", "trending:read", "people:read", "persona:read", "stickers:read"]
+        return {"scopes": scopes, "memes": [m["slug"] for m in top], "persona": None, "packs": [], "people": list(self.people)[:10], "revoked": False, "guest": True}
+
     def count(self, prefix=""):
         return sum(1 for _, p in self.hits if p.startswith(prefix))
 
@@ -189,9 +195,10 @@ def serve(fake: Fake):
                 if path.split("/")[2] == STICKER:
                     return self.reply(200, PNG, [("Content-Type", "image/png")])
                 return self.error_reply(404, "not_found")
-            k = fake.keys.get(self.token())
+            k = fake.keys.get(self.token()) if self.token() else None if path.startswith("/me/") else fake.guest()
             if k is None or k["revoked"]:
                 return self.error_reply(401, "unauthorized")
+            guest = k.get("guest", False)
 
             def need(scope):
                 if scope in k["scopes"]:
@@ -210,7 +217,7 @@ def serve(fake: Fake):
                 return self.reply(200, m) if m else self.error_reply(404, "not_found")
             if path == "/tags" and need("trending:read"):
                 counts = {}
-                for m in fake.memes.values():
+                for m in [] if guest else fake.memes.values():
                     for c in m["categories"]:
                         counts[c] = counts.get(c, 0) + 1
                 return self.reply(200, [{"name": c, "count": n} for c, n in sorted(counts.items(), key=lambda r: (-r[1], r[0]))])
@@ -219,6 +226,8 @@ def serve(fake: Fake):
                 rows = sorted((m for m in fake.memes.values() if not tag or tag in m["categories"]), key=lambda m: -m["heat"])
                 if tag and "limit" not in q:
                     limit = 5
+                if guest:
+                    rows, limit = [] if tag else rows, min(limit, 20)
                 return self.reply(200, [{f: m[f] for f in SUMMARY} for m in rows[:limit]])
             if path == "/persona" and need("persona:read"):
                 p = fake.personas.get(k["persona"])
@@ -236,12 +245,13 @@ def serve(fake: Fake):
                 return self.reply(200, [])
             if path == "/people/linked" and need("people:read"):
                 return self.reply(200, [fake.people[p] for p in k["people"]])
+            people = [fake.people[p] for p in k["people"]] if guest else list(fake.people.values())
             if path == "/people" and need("people:read"):
                 offset = int(q.get("offset", 0))
-                return self.reply(200, list(fake.people.values())[offset : offset + limit])
+                return self.reply(200, people[offset : offset + limit])
             if path.startswith("/people/") and need("people:read"):
                 wanted = path[8:].lower()
-                p = next((p for p in fake.people.values() if wanted in (p["id"], p["name"].lower(), *map(str.lower, p["aliases"]))), None)
+                p = next((p for p in people if wanted in (p["id"], p["name"].lower(), *map(str.lower, p["aliases"]))), None)
                 return self.reply(200, {**p, "memes": [{"slug": "tang-ping", "title": "躺平", "summary": ""}]}) if p else self.error_reply(404, "not_found")
             if path == "/me/usage":
                 return self.reply(200, {"per_day": 100000, "days": [{"day": "2026-01-01", "requests": 3}]})

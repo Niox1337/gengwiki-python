@@ -23,6 +23,8 @@ client.meme("tang-ping").body
 client.persona().as_message()              # {"role": "system", "content": "..."}
 ```
 
+没有 Key 也能用，只是只有梗Wiki 热门的 20 个梗和 10 个人物，没有人设和表情包。第一次调用 `client.turn()` 时返回的 `notice` 会提醒去哪里拿 Key，可以把它转给运行机器人的人。
+
 更多用法见 [example/](https://github.com/Niox1337/gengwiki-python/tree/main/example)。
 
 ## 切换人设

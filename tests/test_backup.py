@@ -49,8 +49,9 @@ class BackupTest(Base):
         c = self.client(backup=True)
         self.assertIn("- 躺平（摆烂）：", c.explain("请问“躺平”是什么梗啊"))
         self.assertIn("- 哈基米（hjm）：出自 赛马娘", c.explain("哈基米这个梗啥意思"))
-        for text in ("这是什么梗", "今天好累", "没有这个是什么梗"):
+        for text in ("这是什么梗", "今天好累", "最近流行什么梗"):
             self.assertEqual(c.explain(text), "")
+        self.assertIn("没有资料，不用再搜它", c.explain("没有这个是什么梗"))  # or the model explains from memory
         self.assertEqual(self.fake.count("/backup"), 2)
         self.assertIn("对方在问「哈基米」是什么梗", c.turn("哈基米这个梗啥意思").prompt)  # hosts get it without calling explain
         self.assertNotIn("对方在问", c.turn("今天好累").prompt)

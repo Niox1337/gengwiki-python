@@ -28,7 +28,7 @@ def _status(c: GengWiki, a) -> None:
     print(f"站点  {c.base_url}")
     print(f"登录  {'已登录' if c.keys.logged_in else '未登录'}")
     if not c._key:
-        print(f"Key   没有，到 {c.site_url}/me 创建后运行 gengwiki keys add 名字")
+        print(f"Key   没有，现在只能用热门的 20 个梗和 10 个人物。到 {c.site_url}/me 创建后运行 gengwiki keys add 名字")
         return
     saved = next((k for k in c.keys.local() if k.current), None)
     print(f"Key   {saved.name if saved else '来自参数或环境变量'}  {c._key[:15]}")

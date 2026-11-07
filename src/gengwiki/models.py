@@ -24,6 +24,8 @@ class Turn(Model):
     memes: bool = False
     quotes: bool = False
     stickers: bool = False
+    # Set on the first turn of a client without a key, for the host to show the person running it.
+    notice: str = ""
 
 
 @dataclass(frozen=True)

@@ -69,7 +69,6 @@ class CliTest(Base):
 
     def test_failures_print_a_message_and_exit_1(self):
         for argv, expected in (
-            (("search", "躺平"), "no API key"),
             (("login",), "unauthorized"),
             (("keys", "use", "nope"), "no key saved"),
             (("keys", "secret", "nope"), "no key saved"),
