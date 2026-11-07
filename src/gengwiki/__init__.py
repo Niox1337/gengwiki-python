@@ -1,4 +1,4 @@
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 from .client import GengWiki  # noqa: E402
 from .errors import (  # noqa: E402
