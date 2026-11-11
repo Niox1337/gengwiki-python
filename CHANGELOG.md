@@ -1,5 +1,9 @@
 # 更新日志
 
+## 0.11.1
+
+- 默认地址换成新域名 https://api.gengwiki.com 和 https://gengwiki.com。旧域名暂时还能用，会转到新地址。
+
 ## 0.11.0
 
 - 没有 Key 也能用，只有梗Wiki 热门的 20 个梗和 10 个人物。第一次调用 `client.turn()` 时返回的 `notice` 会提醒去哪里拿 Key。

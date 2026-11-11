@@ -176,7 +176,7 @@ class MemeTest(Base):
     def test_default_address_is_production(self):
         c = GengWiki(home=self.dir.name)
         self.addCleanup(c.close)
-        self.assertEqual(c.base_url, "https://api.gengwiki.niox.lol")
+        self.assertEqual(c.base_url, "https://api.gengwiki.com")
 
     def test_no_key_says_how_to_get_one(self):
         c = GengWiki(base_url=self.url, site_url=self.url, home=self.dir.name)

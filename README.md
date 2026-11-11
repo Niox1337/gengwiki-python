@@ -6,7 +6,7 @@
 pip install gengwiki
 ```
 
-到[个人中心](https://gengwiki.niox.lol/me)创建 Key，然后保存到本机，之后的代码里就不用再写它了。
+到[个人中心](https://gengwiki.com/me)创建 Key，然后保存到本机，之后的代码里就不用再写它了。
 
 ```bash
 gengwiki keys add 老哥      # 粘贴时不显示，也不会留在命令历史里
@@ -135,7 +135,7 @@ client.add_person("老王", "隔壁宿舍的室友", ["今天不学了"])
 client.remove_word("电子榨菜")   # 返回删掉了几个，没找到时是 0
 ```
 
-这些内容只有自己的 Key 能用，不公开，也不用审核。词进入你的个人词库，用户的话里出现它时 `client.turn()` 会把解释带给模型。表情放进私有表情包，人物关联到当前 Key，马上就能用。Key 的人设创建后不能改，新的人设要在[我的组合](https://gengwiki.niox.lol/me)新建一个组合选它。
+这些内容只有自己的 Key 能用，不公开，也不用审核。词进入你的个人词库，用户的话里出现它时 `client.turn()` 会把解释带给模型。表情放进私有表情包，人物关联到当前 Key，马上就能用。Key 的人设创建后不能改，新的人设要在[我的组合](https://gengwiki.com/me)新建一个组合选它。
 
 表情最大 1MB，边长不超过 500。同名的词、人设和人物会更新，不会重复添加。需要 Key 有 `self:write`，每个 Key 都有。
 

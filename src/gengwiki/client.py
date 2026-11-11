@@ -30,8 +30,8 @@ from .tools import QUOTE_MODES, Tools
 
 log = logging.getLogger("gengwiki")
 
-DEFAULT_API_URL = "https://api.gengwiki.niox.lol"
-DEFAULT_SITE_URL = "https://gengwiki.niox.lol"
+DEFAULT_API_URL = "https://api.gengwiki.com"
+DEFAULT_SITE_URL = "https://gengwiki.com"
 
 # The API returns at most this many rows and has no paging. Fewer rows than this means the list is complete.
 LIST_MAX = 100
