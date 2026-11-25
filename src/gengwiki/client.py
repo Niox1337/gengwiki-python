@@ -57,6 +57,17 @@ BACKUP_URL = "https://cnmeme.wiki/api/v1/public/memes"
 BACKUP_TIMEOUT = 2
 TTL_BACKUP = 24 * 3600
 _BACKUP_ROW = {"title": str, "aliases": list, "summary": str}
+# The server's ranking by meaning is only ever a bonus, so turn() waits this long for it and no longer.
+SEMANTIC_TIMEOUT = 1.5
+# After a failed or skipped ranking turn() picks the usual way for this long without asking.
+SEMANTIC_PAUSE = 60
+# Characters of a message sent for ranking, what the server reads of it.
+SEMANTIC_CHARS = 300
+# Slugs sent for ranking, the server takes no more.
+SEMANTIC_SLUGS = 500
+# Memes in one turn that may come from the ranking, of 15. The rest stay random, so the model still sees variety.
+SEMANTIC_MEMES = 8
+_RELEVANT = {"semantic": bool, "memes": list, "quotes": list}
 
 _SHARED = "shared"  # data that is the same for every key
 _MISSING = {"__missing__": True}
@@ -123,12 +134,15 @@ class GengWiki:
         sticker_frequency: float = 1,
         backup: bool = True,
         guest_memes: bool = True,
+        semantic: bool = False,
     ):
         """quotes is what the model may do with a person's quotes: off, cite, use or both.
 
         The frequencies are the share of replies, from 0 to 1, where turn() lets the model do that unasked. It still decides by context whether to.
         backup lets the meme tools and explain() look up a word this wiki lacks in a public backup wiki. Only that word is sent. Pass False to keep every word here.
         guest_memes False keeps memes out of the prompt while there is no key. turn() still carries the one-time notice on getting a key.
+        semantic True makes turn() send the message to the API, which ranks the memes and quotes on hand by meaning, so the ones that fit reach the model first.
+        Needs a key. Whenever the API cannot rank in time turn() picks the usual way.
         """
         if quotes not in QUOTE_MODES:
             raise ValueError(f"quotes must be one of {QUOTE_MODES}, got {quotes!r}")
@@ -141,6 +155,7 @@ class GengWiki:
         self.sticker_frequency = sticker_frequency
         self.backup = backup
         self.guest_memes = guest_memes
+        self.semantic = semantic
         # The docs give the API address with /v1, so take it with or without.
         self.base_url = check_url(base_url or os.environ.get("GENGWIKI_API_URL") or DEFAULT_API_URL).removesuffix("/v1")
         self.site_url = check_url(site_url or os.environ.get("GENGWIKI_SITE_URL") or DEFAULT_SITE_URL)
@@ -154,6 +169,8 @@ class GengWiki:
         self._http = Http(timeout)
         self._backup_http = Http(BACKUP_TIMEOUT)
         self._backup_paused = 0.0
+        self._semantic_http = Http(SEMANTIC_TIMEOUT)
+        self._semantic_paused = 0.0
         self._store = Store(self.home / "cache.sqlite3")
         self._keyring = Keyring(self.home / "keys.json")
         # A fixed number, so a long-running bot with endless search words holds no more locks than this.
@@ -171,6 +188,7 @@ class GengWiki:
         self._store.close()
         self._http.close()
         self._backup_http.close()
+        self._semantic_http.close()
 
     def __enter__(self):
         return self
@@ -475,11 +493,17 @@ class GengWiki:
         """
         return self._meme_block(text, limit, _MEME_RULE, tags)
 
-    def _meme_block(self, text: str, limit: int, rule: str, tags: Iterable[str] | None = None) -> str:
-        # The model does the matching on meaning, it only sees limit memes. Embeddings if a big list needs better picks.
+    def _meme_block(self, text: str, limit: int, rule: str, tags: Iterable[str] | None = None, ranked: Sequence[str] = ()) -> str:
+        """ranked is slugs best first from the server's ranking, they follow the memes named in text."""
         tags = None if tags is None else list(tags)  # read twice below
         pool = self._pool(tags)
         picked = _search.match_memes(text, pool, limit)
+        by_slug = {r["slug"]: r for r in pool}
+        for slug in ranked:
+            if len(picked) >= limit:
+                break
+            if slug in by_slug and all(r["slug"] != slug for r in picked):
+                picked.append(by_slug[slug])
 
         def unpicked(rows: list[dict]) -> list[dict]:
             seen = {r["slug"] for r in picked}
@@ -502,6 +526,27 @@ class GengWiki:
             f"<memes>\n{lines}\n</memes>"
         )
 
+    def _relevant(self, text: str, slugs: list[str], quotes: bool) -> tuple[list[str], list[tuple[str, str]]]:
+        """Slugs and (person, quote) pairs ranked by how well they fit text, best first. Empty when there is nothing to rank,
+        semantic is off, there is no key, or the API did not rank, which then pauses asking for SEMANTIC_PAUSE. Never raises.
+        """
+        text = text.strip()[:SEMANTIC_CHARS]
+        if not (self.semantic and self._key and text and (slugs or quotes)) or time.time() < self._semantic_paused:
+            return [], []
+        body = {"text": text, "memes": slugs[:SEMANTIC_SLUGS], "quotes": quotes, "limit": SEMANTIC_MEMES}
+        try:
+            r = self._semantic_http.json("POST", f"{self.base_url}/v1/relevant", token=self._key, body=body, expect=_RELEVANT)
+        except Exception as e:  # a bonus must never break the turn it helps
+            self._semantic_paused = time.time() + max(getattr(e, "retry_after", 0), SEMANTIC_PAUSE)
+            log.info("semantic pick skipped: %s", e)
+            return [], []
+        if not r["semantic"]:
+            self._semantic_paused = time.time() + SEMANTIC_PAUSE
+            return [], []
+        ranked_memes = [m for m in r["memes"] if isinstance(m, str)]
+        ranked_quotes = [(q["person"], q["text"]) for q in r["quotes"] if isinstance(q, dict) and isinstance(q.get("person"), str) and isinstance(q.get("text"), str)]
+        return ranked_memes, ranked_quotes
+
     def turn(self, text: str = "", *, memes: bool | None = None, tags: Iterable[str] | None = None) -> Turn:
         """Rolls the three frequencies for one reply, so code decides whether the model may and the model decides whether it fits.
 
@@ -518,9 +563,17 @@ class GengWiki:
             else:
                 use_memes = False
         use_stickers = random.random() < self.sticker_frequency or (self.sticker_frequency > 0 and any(w in text for w in _ASK_STICKER))
+        ranked_memes: list[str] = []
+        ranked_quotes: list[tuple[str, str]] = []
+        if self.semantic and text.strip():
+            tags = None if tags is None else list(tags)  # read again by _meme_block
+            slugs = [r["slug"] for r in self._pool(tags) if r["slug"]] if use_memes else []
+            # At frequency 1 every quote is already in the guide, so there is nothing to put first.
+            quotes = use_quotes and self.quote_frequency < 1 and bool(self.tools._linked_quotes())
+            ranked_memes, ranked_quotes = self._relevant(text, slugs, quotes)
         parts = [
-            self._meme_block(text, 15, _MEME_RULE_FORCED if memes else _MEME_RULE_ROLLED, tags) if use_memes else "这条回复不要主动玩梗。",
-            self.tools._quote_turn(use_quotes),
+            self._meme_block(text, 15, _MEME_RULE_FORCED if memes else _MEME_RULE_ROLLED, tags, ranked_memes) if use_memes else "这条回复不要主动玩梗。",
+            self.tools._quote_turn(use_quotes, ranked_quotes),
             self.tools._sticker_turn(use_stickers),
             self.explain(text, tags=tags),
             self._word_block(text),

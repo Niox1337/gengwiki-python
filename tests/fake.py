@@ -73,6 +73,9 @@ class Fake:
             KEY_B: self._key(KEY_B, "b", PERSONA_B, ["yyds"], []),
         }
         self.backup: list[dict] = []  # what the backup wiki has
+        # What /relevant ranks first: {"memes": [slug], "quotes": [{"person", "text"}]}, None for semantic false, an int for that error status.
+        self.relevant: dict | int | None = None
+        self.relevant_bodies: list[dict] = []
         self.lexicons: dict[str, dict] = {}
         self.entries: dict[str, list] = {}
         self.mine: dict[str, dict] = {"words": {}, "stickers": {}, "personas": {}, "people": {}}  # by name, like the API's upserts
@@ -254,6 +257,16 @@ def serve(fake: Fake):
                 wanted = path[8:].lower()
                 p = next((p for p in people if wanted in (p["id"], p["name"].lower(), *map(str.lower, p["aliases"]))), None)
                 return self.reply(200, {**p, "memes": [{"slug": "tang-ping", "title": "躺平", "summary": ""}]}) if p else self.error_reply(404, "not_found")
+            if path == "/relevant" and method == "POST":
+                b = self.body()
+                fake.relevant_bodies.append(b)
+                if isinstance(fake.relevant, int):
+                    return self.error_reply(fake.relevant, "internal")
+                if guest or fake.relevant is None:
+                    return self.reply(200, {"semantic": False, "memes": [], "quotes": []})
+                memes = [m for m in fake.relevant.get("memes", []) if m in b.get("memes", [])]
+                quotes = fake.relevant.get("quotes", []) if b.get("quotes") else []
+                return self.reply(200, {"semantic": True, "memes": memes, "quotes": quotes})
             if path == "/me/usage":
                 return self.reply(200, {"per_day": 100000, "days": [{"day": "2026-01-01", "requests": 3}]})
             if path == "/me/rate-limit":

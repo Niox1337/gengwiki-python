@@ -169,6 +169,20 @@ messages = [
 
 `client.meme_prompt()` 不掷骰子，措辞也更谨慎，模型只在非常贴切时才用。想按频率来就用 `client.turn()`。
 
+## 按意思挑选
+
+默认情况下，`turn()` 带给模型的梗除了用户原话里提到的，其余是热门和随机抽的。设 `semantic=True` 后，`turn()` 会把用户的话发给梗Wiki，服务器挑出意思相近的梗和语录排在前面，剩下的位置仍然随机。
+
+```python
+client = GengWiki(semantic=True)
+```
+
+- 只有掷中的回复才发请求。最多 8 个梗和 3 条语录按意思挑，语录只在 `quote_frequency` 小于 1 时参与，因为等于 1 时语录都已经在 `guide()` 里。
+- 需要 Key，没有 Key 时不发请求。
+- 用户的话截取前 300 字发给服务器，只用来算相似度，服务器不保存也不记录。介意的话保持默认的 `False`。
+- 请求最多等 1.5 秒。超时、出错或者服务器暂时没有排序时，这条回复照常用随机素材，之后 60 秒内不再请求。
+- `search_stickers` 找不到字面匹配时，服务器也会按意思找，这一点和 `semantic` 无关。
+
 ## Key 存在哪里
 
 Key 和登录令牌默认存在 `~/.gengwiki/<站点>/keys.json`，是只有当前用户能读的明文文件，和 `~/.aws/credentials` 一样。想放进系统钥匙串（Windows 凭据管理器、macOS 钥匙串、Linux Secret Service），就装上下面这个可选依赖。
